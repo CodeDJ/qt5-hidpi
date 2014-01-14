@@ -530,6 +530,7 @@ public:
     int quality;
     QMap<QString, QString> text;
     void getText();
+    qreal devicePixelRatio;
 
     // error
     QImageReader::ImageReaderError imageReaderError;
@@ -548,6 +549,7 @@ QImageReaderPrivate::QImageReaderPrivate(QImageReader *qq)
     deleteDevice = false;
     handler = 0;
     quality = -1;
+    devicePixelRatio = 1.0;
     imageReaderError = QImageReader::UnknownError;
 
     q = qq;
@@ -602,14 +604,31 @@ bool QImageReaderPrivate::initHandler()
             file->setFileName(fileName); // restore the old file name
             return false;
         }
+
     }
 
+    bool isInit = !handler;
     // assign a handler
     if (!handler && (handler = createReadHandlerHelper(device, format, autoDetectImageFormat, ignoresFormatAndExtension)) == 0) {
         imageReaderError = QImageReader::UnsupportedFormatError;
         errorString = QLatin1String(QT_TRANSLATE_NOOP(QImageReader, "Unsupported image format"));
         return false;
     }
+
+    // successful init; check for "@2x" file name suffix and set device pixel ratio.
+    if (isInit)
+    {
+        QFile *file = qobject_cast<QFile *>(device);
+        if (file)
+        {
+            QFileInfo fi(file->fileName());
+            if (fi.baseName().endsWith(QLatin1String("@2x")) || (fi.symLinkTarget().endsWith(QLatin1String("@2x")))) {
+                devicePixelRatio = 2.0;
+            }
+        }
+    }
+
+
     return true;
 }
 
@@ -899,6 +918,20 @@ void QImageReader::setQuality(int quality)
 int QImageReader::quality() const
 {
     return d->quality;
+}
+
+int QImageReader::devicePixelRatio() const
+{
+    if (!d->initHandler())
+        return 1;
+    return static_cast<int>(d->devicePixelRatio);
+}
+
+qreal QImageReader::devicePixelRatioF() const
+{
+    if (!d->initHandler())
+        return 1.0;
+    return d->devicePixelRatio;
 }
 
 
@@ -1249,11 +1282,7 @@ bool QImageReader::read(QImage *image)
         }
     }
 
-    // successful read; check for "@2x" file name suffix and set device pixel ratio.
-    if (QFileInfo(fileName()).baseName().endsWith(QLatin1String("@2x"))) {
-        image->setDevicePixelRatio(2.0);
-    }
-
+    image->setDevicePixelRatio(d->devicePixelRatio);
     return true;
 }
 
