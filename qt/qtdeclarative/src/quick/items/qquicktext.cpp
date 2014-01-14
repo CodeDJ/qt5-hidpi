@@ -65,6 +65,9 @@
 #include <private/qquickstyledtext_p.h>
 #include <QtQuick/private/qquickpixmapcache_p.h>
 
+#include <QMovie>
+#include <QtQml/qqmlfile.h>
+
 #include <qmath.h>
 #include <limits.h>
 
@@ -120,6 +123,7 @@ QQuickTextDocumentWithImageResources::~QQuickTextDocumentWithImageResources()
 {
     if (!m_resources.isEmpty())
         qDeleteAll(m_resources);
+    clearAnimations();
 }
 
 QVariant QQuickTextDocumentWithImageResources::loadResource(int type, const QUrl &name)
@@ -142,6 +146,18 @@ void QQuickTextDocumentWithImageResources::requestFinished()
         markContentsDirty(0, characterCount());
         emit imagesLoaded();
     }
+}
+
+void QQuickTextDocumentWithImageResources::animate()
+{
+    QMovie *movie = qobject_cast<QMovie *>(sender());
+    if (!movie)
+        return;
+    const QUrl &url = m_animations.value(movie);
+    if (!m_resources.contains(url))
+        return;
+    m_resources.value(url)->setImage(movie->currentImage());
+    emit imageAnimated();
 }
 
 void QQuickTextDocumentWithImageResources::clear()
@@ -229,6 +245,15 @@ QQuickPixmap *QQuickTextDocumentWithImageResources::loadPixmap(
         QQuickPixmap *p = new QQuickPixmap(context->engine(), url);
         iter = m_resources.insert(url, p);
 
+        const QString fileName = QQmlFile::urlToLocalFileOrQrc(url);
+        if (fileName.toLower().endsWith(".gif")) {
+            QMovie *movie = new QMovie(fileName);
+            movie->setCacheMode(QMovie::CacheAll);
+            m_animations.insert(movie, url);
+            connect(movie, SIGNAL(frameChanged(int)), this, SLOT(animate()));
+            movie->start();
+        }
+
         if (p->isLoading()) {
             p->connectFinished(this, SLOT(requestFinished()));
             outstanding++;
@@ -252,6 +277,13 @@ void QQuickTextDocumentWithImageResources::clearResources()
     qDeleteAll(m_resources);
     m_resources.clear();
     outstanding = 0;
+    clearAnimations();
+}
+
+void QQuickTextDocumentWithImageResources::clearAnimations()
+{
+    qDeleteAll(m_animations.keys());
+    m_animations.clear();
 }
 
 void QQuickTextDocumentWithImageResources::setText(const QString &text)
@@ -301,6 +333,15 @@ void QQuickText::q_imagesLoaded()
 {
     Q_D(QQuickText);
     d->updateLayout();
+}
+
+void QQuickText::q_imageAnimated()
+{
+    Q_D(QQuickText);
+    if (isComponentComplete())  {
+        d->updateType = QQuickTextPrivate::UpdatePaintNode;
+        update();
+    }
 }
 
 void QQuickTextPrivate::updateLayout()
@@ -1182,6 +1223,8 @@ void QQuickTextPrivate::ensureDoc()
         extra->doc->setBaseUrl(q->baseUrl());
         qmlobject_connect(extra->doc, QQuickTextDocumentWithImageResources, SIGNAL(imagesLoaded()),
                           q, QQuickText, SLOT(q_imagesLoaded()));
+        qmlobject_connect(extra->doc, QQuickTextDocumentWithImageResources, SIGNAL(imageAnimated()),
+                          q, QQuickText, SLOT(q_imageAnimated()));
     }
 }
 

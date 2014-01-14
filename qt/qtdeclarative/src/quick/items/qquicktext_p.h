@@ -253,6 +253,7 @@ protected:
 
 private Q_SLOTS:
     void q_imagesLoaded();
+    void q_imageAnimated();
     void triggerPreprocess();
     void imageDownloadFinished();
 
