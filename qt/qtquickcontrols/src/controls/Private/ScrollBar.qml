@@ -99,7 +99,16 @@ Item {
 
         // Update hover item
         onEntered: if (!pressed) __panel.activeControl = __panel.hitTest(mouseX, mouseY)
-        onExited: if (!pressed) __panel.activeControl = "none"
+        onExited: {
+            if (!pressed) 
+                __panel.activeControl = "none"
+            autoincrement = false;
+            upPressed = false;
+            downPressed = false;
+            handlePressed = false;
+            pageUpPressed = false;
+            pageDownPressed = false;
+        }
         onMouseXChanged: if (!pressed) __panel.activeControl = __panel.hitTest(mouseX, mouseY)
         hoverEnabled: true
 
@@ -170,7 +179,7 @@ Item {
                                              : mouseY - handleRect.height/2 - grooveRect.y
                 pressedX = mouseX;
                 pressedY = mouseY;
-                handlePressed = true;
+                handlePressed = false;
                 oldPosition = slider.position;
             }
         }

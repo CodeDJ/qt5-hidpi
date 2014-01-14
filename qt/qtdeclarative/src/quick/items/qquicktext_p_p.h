@@ -184,6 +184,7 @@ public:
 };
 
 class QQuickPixmap;
+class QMovie;
 class QQuickTextDocumentWithImageResources : public QTextDocument, public QTextObjectInterface
 {
     Q_OBJECT
@@ -196,6 +197,7 @@ public:
     int resourcesLoading() const { return outstanding; }
 
     void clearResources();
+    void clearAnimations();
 
     void clear();
 
@@ -208,6 +210,7 @@ public:
 
 Q_SIGNALS:
     void imagesLoaded();
+    void imageAnimated();
 
 protected:
     QVariant loadResource(int type, const QUrl &name);
@@ -216,9 +219,11 @@ protected:
 
 private Q_SLOTS:
     void requestFinished();
+    void animate();
 
 private:
     QHash<QUrl, QQuickPixmap *> m_resources;
+    QHash<QMovie *, QUrl> m_animations;
     QUrl m_baseUrl;
 
     int outstanding;

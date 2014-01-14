@@ -2011,6 +2011,7 @@ void QQuickTextEditPrivate::init()
     qmlobject_connect(document, QQuickTextDocumentWithImageResources, SIGNAL(redoAvailable(bool)), q, QQuickTextEdit, SIGNAL(canRedoChanged()));
     qmlobject_connect(document, QQuickTextDocumentWithImageResources, SIGNAL(imagesLoaded()), q, QQuickTextEdit, SLOT(updateSize()));
     QObject::connect(document, &QQuickTextDocumentWithImageResources::contentsChange, q, &QQuickTextEdit::q_contentsChange);
+    QObject::connect(document, &QQuickTextDocumentWithImageResources::imageAnimated, q, &QQuickTextEdit::q_imageAnimated);
 
     document->setDefaultFont(font);
     document->setDocumentMargin(textMargin);
@@ -2072,6 +2073,19 @@ void QQuickTextEdit::q_contentsChange(int pos, int charsRemoved, int charsAdded)
     const int delta = charsAdded - charsRemoved;
 
     markDirtyNodesForRange(pos, editRange, delta);
+
+    if (isComponentComplete()) {
+        d->updateType = QQuickTextEditPrivate::UpdatePaintNode;
+        update();
+    }
+}
+
+void QQuickTextEdit::q_imageAnimated()
+{
+    Q_D(QQuickTextEdit);
+
+    //TODO: determinage image location in the document in order to update only needed node.
+    markDirtyNodesForRange(0, d->document->characterCount(), 0);
 
     if (isComponentComplete()) {
         d->updateType = QQuickTextEditPrivate::UpdatePaintNode;
