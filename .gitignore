@@ -34,6 +34,7 @@ qt/qtwebkit/Tools/qmake/mkspecs/modules-inst/
 qt/qtwebkit/Tools/qmake/mkspecs/modules/qt_lib_webkit.pri
 qt/qtwebkit/Tools/qmake/mkspecs/modules/qt_lib_webkitwidgets.pri
 qt/qtwebkit/imports/
+qt/qt*/doc/
 .moc/
 .obj/
 .rcc/
