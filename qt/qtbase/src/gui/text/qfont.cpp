@@ -76,7 +76,10 @@
 
 QT_BEGIN_NAMESPACE
 
-
+namespace
+{
+	static qreal sScalingFactor = 1.0;
+}
 
 bool QFontDef::exactMatch(const QFontDef &other) const
 {
@@ -724,7 +727,7 @@ QFont::QFont(const QString &family, int pointSize, int weight, bool italic)
         resolve_mask |= QFont::StyleResolved;
 
     d->request.family = family;
-    d->request.pointSize = qreal(pointSize);
+    d->request.pointSize = qreal(pointSize) * sScalingFactor;
     d->request.pixelSize = -1;
     d->request.weight = weight;
     d->request.style = italic ? QFont::StyleItalic : QFont::StyleNormal;
@@ -840,7 +843,7 @@ void QFont::setStyleName(const QString &styleName)
 
     \sa setPointSize(), pointSizeF()
 */
-int QFont::pointSize() const
+int QFont::actualPointSize() const
 {
     return qRound(d->request.pointSize);
 }
@@ -953,7 +956,7 @@ QFont::HintingPreference QFont::hintingPreference() const
 
     \sa pointSize(), setPointSizeF()
 */
-void QFont::setPointSize(int pointSize)
+void QFont::setActualPointSize(int pointSize)
 {
     if (pointSize <= 0) {
         qWarning("QFont::setPointSize: Point size <= 0 (%d), must be greater than 0", pointSize);
@@ -978,7 +981,7 @@ void QFont::setPointSize(int pointSize)
 
     \sa pointSizeF(), setPointSize(), setPixelSize()
 */
-void QFont::setPointSizeF(qreal pointSize)
+void QFont::setActualPointSizeF(qreal pointSize)
 {
     if (pointSize <= 0) {
         qWarning("QFont::setPointSizeF: Point size <= 0 (%f), must be greater than 0", pointSize);
@@ -1002,9 +1005,41 @@ void QFont::setPointSizeF(qreal pointSize)
 
     \sa pointSize(), setPointSizeF(), pixelSize(), QFontInfo::pointSize(), QFontInfo::pixelSize()
 */
-qreal QFont::pointSizeF() const
+qreal QFont::actualPointSizeF() const
 {
     return d->request.pointSize;
+}
+
+int QFont::pointSize() const
+{
+	return qRound(actualPointSizeF() / sScalingFactor);
+}
+
+void QFont::setPointSize(int size)
+{
+	setActualPointSizeF(qreal(size) * sScalingFactor);
+}
+
+qreal QFont::pointSizeF() const
+{
+	return actualPointSizeF() / sScalingFactor;
+}
+
+void QFont::setPointSizeF(qreal size)
+{
+	setActualPointSizeF(size * sScalingFactor);
+}
+
+qreal QFont::scalingFactor()
+{
+	return sScalingFactor;
+}
+
+void QFont::setScalingFactor(qreal factor)
+{
+	if (factor == 0.0)
+		factor = 1.0;
+	sScalingFactor = factor;
 }
 
 /*!
