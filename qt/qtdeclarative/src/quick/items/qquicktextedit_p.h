@@ -319,6 +319,7 @@ public Q_SLOTS:
 private Q_SLOTS:
     void q_textChanged();
     void q_contentsChange(int, int, int);
+    void q_imageAnimated();
     void updateSelection();
     void moveCursorDelegate();
     void createCursor();

@@ -21,7 +21,8 @@ STYLES_QML_FILES = \
     $$PWD/Base/TextAreaStyle.qml \
     $$PWD/Base/TextFieldStyle.qml \
     $$PWD/Base/ToolBarStyle.qml \
-    $$PWD/Base/ToolButtonStyle.qml
+    $$PWD/Base/ToolButtonStyle.qml \
+    $$PWD/Base/StandAloneScrollBarStyle.qml \
 
 # Desktop
 STYLES_QML_FILES += \
@@ -47,7 +48,8 @@ STYLES_QML_FILES += \
     $$PWD/Desktop/TextAreaStyle.qml \
     $$PWD/Desktop/TextFieldStyle.qml \
     $$PWD/Desktop/ToolBarStyle.qml \
-    $$PWD/Desktop/ToolButtonStyle.qml
+    $$PWD/Desktop/ToolButtonStyle.qml \
+    $$PWD/Desktop/StandAloneScrollBarStyle.qml \
 
 # Images
 STYLES_QML_FILES += \

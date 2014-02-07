@@ -173,6 +173,14 @@ public:
     qreal pointSizeF() const;
     void setPointSizeF(qreal);
 
+	int actualPointSize() const;
+	void setActualPointSize(int);
+	qreal actualPointSizeF() const;
+	void setActualPointSizeF(qreal);
+
+	static qreal scalingFactor();
+	static void setScalingFactor(qreal);
+
     int pixelSize() const;
     void setPixelSize(int);
 

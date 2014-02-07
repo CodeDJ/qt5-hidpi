@@ -1,0 +1,16 @@
+-opensource 
+-debug-and-release 
+-qt-sql-sqlite 
+-platform 
+win32-msvc2010 
+-confirm-license 
+-openssl 
+-prefix 
+C:\Qt-5.2.0 
+-developer-build 
+-nomake 
+examples 
+-nomake 
+tests 
+-icu 
+-force-debug-info 

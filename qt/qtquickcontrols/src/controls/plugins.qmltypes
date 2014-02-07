@@ -1283,6 +1283,24 @@ Module {
         }
     }
     Component {
+        prototype: "QQuickItem"
+        name: "QtQuick.Controls/StandAloneScrollBar"
+        exports: ["QtQuick.Controls/StandAloneScrollBar 1.0"]
+        exportMetaObjectRevisions: [0]
+        Property { name: "flickableItem"; type: "QQuickFlickable"; isPointer: true }
+        Property { name: "isTransient"; type: "bool" }
+        Property { name: "active"; type: "bool" }
+        Property { name: "scrolling"; type: "bool" }
+        Property { name: "orientation"; type: "int" }
+        Property { name: "minimumValue"; type: "double" }
+        Property { name: "maximumValue"; type: "double" }
+        Property { name: "stepSize"; type: "int" }
+        Property { name: "value"; type: "double" }
+        Property { name: "style"; type: "QQmlComponent"; isPointer: true }
+        Property { name: "__style"; type: "Style_QMLTYPE_0"; isPointer: true }
+        Property { name: "__panel"; type: "QQuickItem"; isPointer: true }
+    }
+    Component {
         prototype: "QQuickFocusScope"
         name: "QtQuick.Controls/Slider"
         exports: ["QtQuick.Controls/Slider 1.0"]

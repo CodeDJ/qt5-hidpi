@@ -1,0 +1,6 @@
+#!/bin/sh
+if [ "$#" -gt 0 ]; then
+  /Users/iustin/Work/Qt/qt-everywhere-opensource-src-5.1.0/qtbase/configure -debug-and-release -opensource -qt-sql-sqlite -platform macx-clang-32 -no-c++11 -confirm-license -prefix /Developer/Qt-5.1.0 -developer-build -nomake tests -nomake examples "$@"
+else
+  /Users/iustin/Work/Qt/qt-everywhere-opensource-src-5.1.0/qtbase/configure -debug-and-release -opensource -qt-sql-sqlite -platform macx-clang-32 -no-c++11 -confirm-license -prefix /Developer/Qt-5.1.0 -developer-build -nomake tests -nomake examples
+fi
