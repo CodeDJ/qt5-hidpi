@@ -43,47 +43,62 @@ import QtQuick.Controls 1.1
 import QtQuick.Controls.Private 1.0
 
 /*!
-        \qmltype ScrollBar
-        \internal
-        \inqmlmodule QtQuick.Controls.Private
+    \qmltype StandAloneScrollBar
+    \inqmlmodule QtQuick.Controls
+    \since  5.2.1
+    \ingroup views
+    \brief Provides a scrolling bar within another Flickable.
 */
 Item {
     id: scrollbar
 
-    property bool isTransient: false
-    property bool active: false
+    property Flickable flickableItem: null
+    property bool isTransient: !!__panel && !!__panel.isTransient
+    property bool active: !!__panel && (__panel.sunken || __panel.activeControl !== "none")
     property int orientation: Qt.Horizontal
     property alias minimumValue: slider.minimumValue
     property alias maximumValue: slider.maximumValue
     property alias value: slider.value
     property int singleStep: 20
+    property bool scrolling: false
+    property Component style: Qt.createComponent(Settings.style + "/StandAloneScrollBarStyle.qml", scrollbar)
+    property Style __style: styleLoader.item
+    property Item __panel: panelLoader.item
 
     activeFocusOnTab: false
+    enabled: !isTransient || __panel.visible
+    visible: orientation === Qt.Horizontal ? (internalData.contentWidth > internalData.availableWidth)
+                                           : (internalData.contentHeight > internalData.availableHeight)
+    width: (visible && orientation === Qt.Vertical) ? implicitWidth : 0
+    height: (visible && orientation === Qt.Horizontal) ? implicitHeight : 0
+    z: 1
 
     Accessible.role: Accessible.ScrollBar
     implicitWidth: panelLoader.implicitWidth
     implicitHeight: panelLoader.implicitHeight
 
-    property bool upPressed
-    property bool downPressed
-    property bool pageUpPressed
-    property bool pageDownPressed
-    property bool handlePressed
-
-
-    property Item __panel: panelLoader.item
     Loader {
         id: panelLoader
         anchors.fill: parent
         sourceComponent: __style ? __style.__scrollbar : null
-        onStatusChanged: if (status === Loader.Error) console.error("Failed to load Style for", root)
+        onStatusChanged: if (status === Loader.Error) console.error("Failed to load Style for", scrollbar)
         property alias __control: scrollbar
         property QtObject __styleData: QtObject {
             readonly property alias horizontal: internal.horizontal
-            readonly property alias upPressed: scrollbar.upPressed
-            readonly property alias downPressed: scrollbar.downPressed
-            readonly property alias handlePressed: scrollbar.handlePressed
+            readonly property alias upPressed: internalData.upPressed
+            readonly property alias downPressed: internalData.downPressed
+            readonly property alias handlePressed: internalData.handlePressed
         }
+    }
+
+    Loader {
+        id: styleLoader
+        sourceComponent: style
+        onStatusChanged: {
+            if (status === Loader.Error)
+                console.error("Failed to load Style for", scrollbar)
+        }
+        property alias __control: scrollbar
     }
 
     MouseArea {
@@ -109,7 +124,8 @@ Item {
         property int grooveSize
 
         Timer {
-            running: upPressed || downPressed || pageUpPressed || pageDownPressed
+            running: internalData.upPressed || internalData.downPressed
+                     || internalData.pageUpPressed || internalData.pageDownPressed
             interval: 350
             onTriggered: internal.autoincrement = true
         }
@@ -119,23 +135,26 @@ Item {
             interval: 60
             repeat: true
             onTriggered: {
-                if (upPressed && internal.containsMouse)
+                if (internalData.upPressed && internal.containsMouse) {
                     internal.decrement();
-                else if (downPressed && internal.containsMouse)
+                } else if (internalData.downPressed && internal.containsMouse) {
                     internal.increment();
-                else if (pageUpPressed)
+                } else if (internalData.pageUpPressed) {
                     internal.decrementPage();
-                else if (pageDownPressed)
+                } else if (internalData.pageDownPressed) {
                     internal.incrementPage();
+                }
             }
         }
 
         onPositionChanged: {
-            if (handlePressed) {
-                if (!horizontal)
-                    slider.position = oldPosition + (mouseY - pressedY)
-                else
-                    slider.position = oldPosition + (mouseX - pressedX)
+            if (internalData.handlePressed) {
+                if (!horizontal) {
+                    slider.position = oldPosition + (mouseY - pressedY);
+                } else {
+                    slider.position = oldPosition + (mouseX - pressedX);
+                }
+                scrolling = true;
             }
         }
 
@@ -149,49 +168,53 @@ Item {
             if (__panel.activeControl === "handle") {
                 pressedX = mouseX;
                 pressedY = mouseY;
-                handlePressed = true;
+                internalData.handlePressed = true;
                 oldPosition = slider.position;
             } else if (__panel.activeControl === "up") {
                 decrement();
-                upPressed = Qt.binding(function() {return containsMouse});
+                internalData.upPressed = Qt.binding(function() {return containsMouse});
             } else if (__panel.activeControl === "down") {
                 increment();
-                downPressed = Qt.binding(function() {return containsMouse});
+                internalData.downPressed = Qt.binding(function() {return containsMouse});
             } else if (!scrollToClickposition){
                 if (__panel.activeControl === "upPage") {
                     decrementPage();
-                    pageUpPressed = true;
+                    internalData.pageUpPressed = true;
                 } else if (__panel.activeControl === "downPage") {
                     incrementPage();
-                    pageDownPressed = true;
+                    internalData.pageDownPressed = true;
                 }
             } else { // scroll to click position
                 slider.position = horizontal ? mouseX -  handleRect.width/2 - grooveRect.x
                                              : mouseY - handleRect.height/2 - grooveRect.y
                 pressedX = mouseX;
                 pressedY = mouseY;
-                handlePressed = true;
+                internalData.handlePressed = true;
                 oldPosition = slider.position;
             }
+            scrolling = true;
         }
 
         onReleased: {
             __panel.activeControl = __panel.hitTest(mouseX, mouseY);
             autoincrement = false;
-            upPressed = false;
-            downPressed = false;
-            handlePressed = false;
-            pageUpPressed = false;
-            pageDownPressed = false;
+            internalData.upPressed = false;
+            internalData.downPressed = false;
+            internalData.handlePressed = false;
+            internalData.pageUpPressed = false;
+            internalData.pageDownPressed = false;
+            scrolling = false;
         }
 
         onWheel: {
             var stepCount = -(wheel.angleDelta.x ? wheel.angleDelta.x : wheel.angleDelta.y) / 120
             if (stepCount != 0) {
+                scrolling = true
                 if (wheel.modifiers & Qt.ControlModifier || wheel.modifiers & Qt.ShiftModifier)
                    incrementPage(stepCount)
                 else
                    increment(stepCount)
+                scrolling = false
             }
         }
 
@@ -230,5 +253,112 @@ Item {
             inverted: false
             positionAtMaximum: internal.grooveSize
         }
+    }
+
+    Connections {
+        target: flickableItem
+        onContentWidthChanged: internalData.doLayout()
+        onContentHeightChanged: internalData.doLayout()
+        onContentXChanged: {
+            if (scrollbar.orientation === Qt.Horizontal) {
+                internalData.blockUpdates = true;
+                slider.value = flickableItem.contentX;
+                internalData.blockUpdates = false;
+            }
+            internalData.flash();
+        }
+        onContentYChanged: {
+            if (scrollbar.orientation === Qt.Vertical) {
+                internalData.blockUpdates = true;
+                slider.value = flickableItem.contentY;
+                internalData.blockUpdates = false;
+            }
+            internalData.flash();
+        }
+    }
+
+    onValueChanged: {
+        if (flickableItem && !internalData.blockUpdates && enabled) {
+            if (orientation === Qt.Horizontal) {
+                flickableItem.contentX = value;
+            } else {
+                flickableItem.contentY = value;
+            }
+        }
+    }
+
+    Binding {
+        target: scrollbar.__panel
+        property: "raised"
+        value: scrollbar.active
+        when: scrollbar.isTransient
+    }
+    Binding {
+        target: scrollbar.__panel
+        property: "visible"
+        value: true
+        when: !scrollbar.isTransient || scrollbar.active
+    }
+
+    Timer {
+        id: flasher
+        interval: 10
+        onTriggered: __panel.on = false
+    }
+
+    QtObject {
+        id: internalData
+
+        property bool blockUpdates: false
+        property int availableHeight: 0
+        property int availableWidth: 0
+        property int contentHeight: 0
+        property int contentWidth: 0
+        property real originX: 0
+        property real originY: 0
+        property bool recursionGuard: false
+        property bool upPressed: false
+        property bool downPressed: false
+        property bool pageUpPressed: false
+        property bool pageDownPressed: false
+        property bool handlePressed: false
+
+        function doLayout()
+        {
+            if (recursionGuard || !flickableItem)
+                return;
+
+            recursionGuard = true;
+            availableWidth = flickableItem.width;
+            availableHeight = flickableItem.height;
+            contentWidth = flickableItem.contentWidth;
+            contentHeight = flickableItem.contentHeight;
+            originX = flickableItem.originX;
+            originY = flickableItem.originY;
+            slider.minimumValue = minValue();
+            slider.maximumValue = maxValue();
+            recursionGuard = false;
+        }
+
+        function maxValue()
+        {
+            if (scrollbar.orientation == Qt.Vertical)
+                return contentHeight > availableHeight ? originY + contentHeight - availableHeight : 0;
+            return contentWidth > availableWidth ? originX + contentWidth - availableWidth : 0;
+        }
+
+         function minValue()
+         {
+             return (scrollbar.orientation == Qt.Vertical) ? originY : originX;
+         }
+
+         function flash()
+         {
+             if (scrollbar.isTransient) {
+                 scrollbar.__panel.on = true;
+                 scrollbar.__panel.visible = true;
+                 flasher.start();
+             }
+         }
     }
 }
