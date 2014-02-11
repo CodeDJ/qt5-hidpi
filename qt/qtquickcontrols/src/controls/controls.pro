@@ -34,7 +34,8 @@ CONTROLS_QML_FILES = \
     TextArea.qml \
     TextField.qml \
     ToolBar.qml \
-    ToolButton.qml
+    ToolButton.qml \
+    StandAloneScrollBar.qml
 
 QML_FILES += $$CONTROLS_QML_FILES
 

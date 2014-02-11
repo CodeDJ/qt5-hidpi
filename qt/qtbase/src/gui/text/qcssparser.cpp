@@ -373,6 +373,16 @@ static quint64 findKnownValue(const QString &name, const QCssKnownValue *start, 
     return prop->id;
 }
 
+static double qt_layoutScaleFactor()
+{
+	QVariant layoutScaleFactor = qApp->property("_css_layoutscalefactor");
+	if (layoutScaleFactor.isValid())
+		return layoutScaleFactor.toDouble();
+
+    return 1.0;
+}
+
+
 ///////////////////////////////////////////////////////////////////////////////
 // Value Extractor
 ValueExtractor::ValueExtractor(const QVector<Declaration> &decls, const QPalette &pal)
@@ -382,12 +392,21 @@ ValueExtractor::ValueExtractor(const QVector<Declaration> &decls, const QPalette
 
 LengthData ValueExtractor::lengthValue(const Value& v)
 {
+    double multiplyFactor = 1.0;
     QString s = v.variant.toString();
     s.reserve(s.length());
     LengthData data;
     data.unit = LengthData::None;
-    if (s.endsWith(QLatin1String("px"), Qt::CaseInsensitive))
+	if (s.endsWith(QLatin1String("lx"), Qt::CaseInsensitive))
+	{
+		data.unit = LengthData::Px;
+		multiplyFactor = qt_layoutScaleFactor();
+	}
+    else if (s.endsWith(QLatin1String("px"), Qt::CaseInsensitive))
+    {
         data.unit = LengthData::Px;
+        multiplyFactor = 1.0;
+    }
     else if (s.endsWith(QLatin1String("ex"), Qt::CaseInsensitive))
         data.unit = LengthData::Ex;
     else if (s.endsWith(QLatin1String("em"), Qt::CaseInsensitive))
@@ -396,7 +415,7 @@ LengthData ValueExtractor::lengthValue(const Value& v)
     if (data.unit != LengthData::None)
         s.chop(2);
 
-    data.number = s.toDouble();
+    data.number = s.toDouble() * multiplyFactor;
     return data;
 }
 
@@ -1305,10 +1324,10 @@ bool ValueExtractor::extractImage(QIcon *icon, Qt::Alignment *a, QSize *size)
             if (decl.d->values.count() > 0 && decl.d->values.at(0).type == Value::Uri) {
                 // try to pull just the size from the image...
                 QImageReader imageReader(decl.d->values.at(0).variant.toString());
-                if ((*size = imageReader.size()).isNull()) {
+                if ((*size = imageReader.size() / imageReader.devicePixelRatio()).isNull()) {
                     // but we'll have to load the whole image if the
                     // format doesn't support just reading the size
-                    *size = imageReader.read().size();
+                    *size = imageReader.read().size() / imageReader.devicePixelRatio();
                 }
             }
             break;

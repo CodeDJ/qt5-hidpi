@@ -99,7 +99,7 @@ static const struct {
     { "TextField", 1, 0 },
     { "ToolBar", 1, 0 },
     { "ToolButton", 1, 0 },
-
+    { "StandAloneScrollBar", 1, 0 },
     { "BusyIndicator", 1, 1 }
 };
 

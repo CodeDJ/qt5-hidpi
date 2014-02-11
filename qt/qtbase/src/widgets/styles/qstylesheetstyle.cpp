@@ -1122,8 +1122,11 @@ void QRenderRule::drawBorderImage(QPainter *p, const QRect& rect)
     const QStyleSheetBorderImageData *borderImageData = border()->borderImage();
     const int *targetBorders = border()->borders;
     const int *sourceBorders = borderImageData->cuts;
-    QMargins sourceMargins(sourceBorders[LeftEdge], sourceBorders[TopEdge],
-                           sourceBorders[RightEdge], sourceBorders[BottomEdge]);
+
+	int dprPixmap = static_cast<int>(borderImageData->pixmap.devicePixelRatio());
+	
+    QMargins sourceMargins(sourceBorders[LeftEdge] * dprPixmap, sourceBorders[TopEdge] * dprPixmap,
+                           sourceBorders[RightEdge] * dprPixmap, sourceBorders[BottomEdge] * dprPixmap);
     QMargins targetMargins(targetBorders[LeftEdge], targetBorders[TopEdge],
                            targetBorders[RightEdge], targetBorders[BottomEdge]);
 
@@ -1170,8 +1173,9 @@ void QRenderRule::drawBackgroundImage(QPainter *p, const QRect &rect, QPoint off
     if (background()->attachment == Attachment_Fixed)
         off = QPoint(0, 0);
 
+    int dprPixmap = static_cast<int>(bgp.devicePixelRatio());
     QRect r = originRect(rect, background()->origin);
-    QRect aligned = QStyle::alignedRect(Qt::LeftToRight, background()->position, bgp.size(), r);
+    QRect aligned = QStyle::alignedRect(Qt::LeftToRight, background()->position, bgp.size()/dprPixmap, r);
     QRect inter = aligned.translated(-off).intersected(r);
 
     switch (background()->repeat) {
@@ -1192,8 +1196,11 @@ void QRenderRule::drawBackgroundImage(QPainter *p, const QRect &rect, QPoint off
         break;
     case Repeat_None:
     default:
-        p->drawPixmap(inter.x(), inter.y(), bgp, inter.x() - aligned.x() + off.x(),
-                      inter.y() - aligned.y() + off.y(), inter.width(), inter.height());
+        p->drawPixmap(inter.x(), inter.y(), bgp,
+                      (inter.x() - aligned.x() + off.x()) * dprPixmap,
+                      (inter.y() - aligned.y() + off.y()) * dprPixmap,
+                      inter.width() * dprPixmap,
+                      inter.height() * dprPixmap);
         break;
     }
 
