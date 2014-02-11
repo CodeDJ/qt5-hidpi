@@ -1461,7 +1461,7 @@ void QQuickVector3dAnimation::setTo(QVector3D t)
 
     \snippet qml/rotationanimation.qml 0
 
-    Notice the RotationAnimation did not need to set a \l target
+    Notice the RotationAnimation did not need to set a \c target
     value. As a convenience, when used in a transition, RotationAnimation will rotate all
     properties named "rotation" or "angle". You can override this by providing
     your own properties via \l {PropertyAnimation::properties}{properties} or
@@ -2083,6 +2083,7 @@ void QQuickPropertyAnimation::setTo(const QVariant &t)
 }
 
 /*!
+    \qmlpropertygroup QtQuick::PropertyAnimation::easing
     \qmlproperty enumeration QtQuick::PropertyAnimation::easing.type
     \qmlproperty real QtQuick::PropertyAnimation::easing.amplitude
     \qmlproperty real QtQuick::PropertyAnimation::easing.overshoot

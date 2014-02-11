@@ -44,6 +44,7 @@
 #include "qv4global_p.h"
 #include "qv4value_def_p.h"
 #include "qv4managed_p.h"
+#include "qv4engine_p.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -66,9 +67,11 @@ struct CallContext;
 struct CatchContext;
 struct WithContext;
 
-struct Q_QML_EXPORT ExecutionContext
+struct Q_QML_EXPORT ExecutionContext : public Managed
 {
-    enum Type {
+    Q_MANAGED
+
+    enum ContextType {
         Type_GlobalContext = 0x1,
         Type_CatchContext = 0x2,
         Type_WithContext = 0x3,
@@ -77,9 +80,24 @@ struct Q_QML_EXPORT ExecutionContext
         Type_QmlContext = 0x6
     };
 
-    Type type;
+    ExecutionContext(ExecutionEngine *engine, ContextType t)
+        : Managed(engine->executionContextClass)
+    {
+        this->type = t;
+        strictMode = false;
+        this->engine = engine;
+        this->parent = engine->currentContext();
+        outer = 0;
+        lookups = 0;
+        compilationUnit = 0;
+        currentEvalCode = 0;
+        interpreterInstructionPointer = 0;
+        lineNumber = -1;
+        engine->current = this;
+    }
+
+    ContextType type;
     bool strictMode;
-    bool marked;
 
     CallData *callData;
 
@@ -88,7 +106,6 @@ struct Q_QML_EXPORT ExecutionContext
     ExecutionContext *outer;
     Lookup *lookups;
     CompiledData::CompilationUnit *compilationUnit;
-    ExecutionContext *next; // used in the GC
 
     struct EvalCode
     {
@@ -98,28 +115,14 @@ struct Q_QML_EXPORT ExecutionContext
     EvalCode *currentEvalCode;
 
     const uchar **interpreterInstructionPointer;
-    char *jitInstructionPointer;
-
-    void initBaseContext(Type type, ExecutionEngine *engine, ExecutionContext *parentContext)
-    {
-        this->type = type;
-        strictMode = false;
-        marked = false;
-        this->engine = engine;
-        parent = parentContext;
-        outer = 0;
-        lookups = 0;
-        compilationUnit = 0;
-        currentEvalCode = 0;
-        interpreterInstructionPointer = 0;
-        jitInstructionPointer = 0;
-    }
+    int lineNumber;
 
     CallContext *newCallContext(FunctionObject *f, CallData *callData);
     WithContext *newWithContext(ObjectRef with);
     CatchContext *newCatchContext(const StringRef exceptionVarName, const ValueRef exceptionValue);
     CallContext *newQmlContext(FunctionObject *f, ObjectRef qml);
 
+    // formals are in reverse order
     String * const *formals() const;
     unsigned int formalCount() const;
     String * const *variables() const;
@@ -130,11 +133,11 @@ struct Q_QML_EXPORT ExecutionContext
     ReturnedValue throwError(const QV4::ValueRef value);
     ReturnedValue throwError(const QString &message);
     ReturnedValue throwSyntaxError(const QString &message);
-    ReturnedValue throwSyntaxError(const QString &message, const QString &fileName, int line, int column);
+    ReturnedValue throwSyntaxError(const QString &message, const QString &fileName, int lineNumber, int column);
     ReturnedValue throwTypeError();
     ReturnedValue throwTypeError(const QString &message);
     ReturnedValue throwReferenceError(const ValueRef value);
-    ReturnedValue throwReferenceError(const QString &value, const QString &fileName, int line, int column);
+    ReturnedValue throwReferenceError(const QString &value, const QString &fileName, int lineNumber, int column);
     ReturnedValue throwRangeError(const ValueRef value);
     ReturnedValue throwRangeError(const QString &message);
     ReturnedValue throwURIError(const ValueRef msg);
@@ -148,26 +151,27 @@ struct Q_QML_EXPORT ExecutionContext
     // Can only be called from within catch(...), rethrows if no JS exception.
     ReturnedValue catchException(StackTrace *trace = 0);
 
-    void mark();
-
     inline CallContext *asCallContext();
     inline const CallContext *asCallContext() const;
+
+    static void markObjects(Managed *m, ExecutionEngine *e);
 };
 
 struct CallContext : public ExecutionContext
 {
-    FunctionObject *function;
-    int realArgumentCount;
-    SafeValue *locals;
-    Object *activation;
-
-    void initSimpleCallContext(ExecutionEngine *engine, ExecutionContext *parent) {
-        initBaseContext(Type_SimpleCallContext, engine, parent);
+    CallContext(ExecutionEngine *engine, ContextType t = Type_SimpleCallContext)
+        : ExecutionContext(engine, t)
+    {
         function = 0;
         locals = 0;
         activation = 0;
     }
-    void initQmlContext(ExecutionContext *parentContext, ObjectRef qml, QV4::FunctionObject *function);
+    CallContext(ExecutionEngine *engine, ObjectRef qml, QV4::FunctionObject *function);
+
+    FunctionObject *function;
+    int realArgumentCount;
+    SafeValue *locals;
+    Object *activation;
 
     inline ReturnedValue argument(int i);
     bool needsOwnArguments() const;
@@ -175,14 +179,14 @@ struct CallContext : public ExecutionContext
 
 struct GlobalContext : public ExecutionContext
 {
-    void initGlobalContext(ExecutionEngine *e);
+    GlobalContext(ExecutionEngine *engine);
 
     Object *global;
 };
 
 struct CatchContext : public ExecutionContext
 {
-    void initCatchContext(ExecutionContext *p, const StringRef exceptionVarName, const ValueRef exceptionValue);
+    CatchContext(ExecutionEngine *engine, const StringRef exceptionVarName, const ValueRef exceptionValue);
 
     SafeString exceptionVarName;
     SafeValue exceptionValue;
@@ -190,9 +194,8 @@ struct CatchContext : public ExecutionContext
 
 struct WithContext : public ExecutionContext
 {
+    WithContext(ExecutionEngine *engine, ObjectRef with);
     Object *withObject;
-
-    void initWithContext(ExecutionContext *p, ObjectRef with);
 };
 
 inline CallContext *ExecutionContext::asCallContext()
@@ -204,6 +207,37 @@ inline const CallContext *ExecutionContext::asCallContext() const
 {
     return type >= Type_SimpleCallContext ? static_cast<const CallContext *>(this) : 0;
 }
+
+
+inline void ExecutionEngine::pushContext(CallContext *context)
+{
+    context->parent = current;
+    current = context;
+    current->currentEvalCode = 0;
+}
+
+inline ExecutionContext *ExecutionEngine::popContext()
+{
+    Q_ASSERT(current->parent);
+    current = current->parent;
+    return current;
+}
+
+struct ExecutionContextSaver
+{
+    ExecutionEngine *engine;
+    ExecutionContext *savedContext;
+
+    ExecutionContextSaver(ExecutionContext *context)
+        : engine(context->engine)
+        , savedContext(context)
+    {
+    }
+    ~ExecutionContextSaver()
+    {
+        engine->current = savedContext;
+    }
+};
 
 /* Function *f, int argc */
 #define requiredMemoryForExecutionContect(f, argc) \

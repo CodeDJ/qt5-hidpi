@@ -150,6 +150,7 @@ private slots:
     void header();
     void header_data();
     void header_delayItemCreation();
+    void headerChangesViewport();
     void footer();
     void footer_data();
     void extents();
@@ -212,6 +213,10 @@ private slots:
     void delayedChanges_QTBUG_30555();
     void outsideViewportChangeNotAffectingView();
     void testProxyModelChangedAfterMove();
+
+    void typedModel();
+
+    void highlightItemGeometryChanges();
 
 private:
     template <class T> void items(const QUrl &source);
@@ -731,6 +736,8 @@ void tst_QQuickListView::insertBeforeVisible()
 {
     QFETCH(int, insertIndex);
     QFETCH(int, insertCount);
+    QFETCH(int, removeIndex);
+    QFETCH(int, removeCount);
     QFETCH(int, cacheBuffer);
 
     QQuickText *name;
@@ -770,14 +777,19 @@ void tst_QQuickListView::insertBeforeVisible()
     QVERIFY(item);
     QCOMPARE(item->y(), listview->contentY());
 
-    QList<QPair<QString, QString> > newData;
-    for (int i=0; i<insertCount; i++)
-        newData << qMakePair(QString("value %1").arg(i), QString::number(i));
-    model.insertItems(insertIndex, newData);
-    QTRY_COMPARE(listview->property("count").toInt(), model.count());
+    if (removeCount > 0)
+        model.removeItems(removeIndex, removeCount);
+
+    if (insertCount > 0) {
+        QList<QPair<QString, QString> > newData;
+        for (int i=0; i<insertCount; i++)
+            newData << qMakePair(QString("value %1").arg(i), QString::number(i));
+        model.insertItems(insertIndex, newData);
+        QTRY_COMPARE(listview->property("count").toInt(), model.count());
+    }
 
     // now, moving to the top of the view should position the inserted items correctly
-    int itemsOffsetAfterMove = -(insertCount * 20);
+    int itemsOffsetAfterMove = (removeCount - insertCount) * 20;
     listview->setCurrentIndex(0);
     QTRY_COMPARE(QQuickItemPrivate::get(listview)->polishScheduled, false);
     QTRY_COMPARE(listview->currentIndex(), 0);
@@ -802,23 +814,41 @@ void tst_QQuickListView::insertBeforeVisible_data()
 {
     QTest::addColumn<int>("insertIndex");
     QTest::addColumn<int>("insertCount");
+    QTest::addColumn<int>("removeIndex");
+    QTest::addColumn<int>("removeCount");
     QTest::addColumn<int>("cacheBuffer");
 
-    QTest::newRow("insert 1 at 0, 0 buffer") << 0 << 1 << 0;
-    QTest::newRow("insert 1 at 0, 100 buffer") << 0 << 1 << 100;
-    QTest::newRow("insert 1 at 0, 500 buffer") << 0 << 1 << 500;
+    QTest::newRow("insert 1 at 0, 0 buffer") << 0 << 1 << 0 << 0 << 0;
+    QTest::newRow("insert 1 at 0, 100 buffer") << 0 << 1 << 0 << 0 << 100;
+    QTest::newRow("insert 1 at 0, 500 buffer") << 0 << 1 << 0 << 0 << 500;
 
-    QTest::newRow("insert 1 at 1, 0 buffer") << 1 << 1 << 0;
-    QTest::newRow("insert 1 at 1, 100 buffer") << 1 << 1 << 100;
-    QTest::newRow("insert 1 at 1, 500 buffer") << 1 << 1 << 500;
+    QTest::newRow("insert 1 at 1, 0 buffer") << 1 << 1 << 0 << 0 << 0;
+    QTest::newRow("insert 1 at 1, 100 buffer") << 1 << 1 << 0 << 0 << 100;
+    QTest::newRow("insert 1 at 1, 500 buffer") << 1 << 1 << 0 << 0 << 500;
 
-    QTest::newRow("insert multiple at 0, 0 buffer") << 0 << 3 << 0;
-    QTest::newRow("insert multiple at 0, 100 buffer") << 0 << 3 << 100;
-    QTest::newRow("insert multiple at 0, 500 buffer") << 0 << 3 << 500;
+    QTest::newRow("insert multiple at 0, 0 buffer") << 0 << 3 << 0 << 0 << 0;
+    QTest::newRow("insert multiple at 0, 100 buffer") << 0 << 3 << 0 << 0 << 100;
+    QTest::newRow("insert multiple at 0, 500 buffer") << 0 << 3 << 0 << 0 << 500;
 
-    QTest::newRow("insert multiple at 1, 0 buffer") << 1 << 3 << 0;
-    QTest::newRow("insert multiple at 1, 100 buffer") << 1 << 3 << 100;
-    QTest::newRow("insert multiple at 1, 500 buffer") << 1 << 3 << 500;
+    QTest::newRow("insert multiple at 1, 0 buffer") << 1 << 3 << 0 << 0 << 0;
+    QTest::newRow("insert multiple at 1, 100 buffer") << 1 << 3 << 0 << 0 << 100;
+    QTest::newRow("insert multiple at 1, 500 buffer") << 1 << 3 << 0 << 0 << 500;
+
+    QTest::newRow("remove 1 at 0, 0 buffer") << 0 << 0 << 0 << 1 << 0;
+    QTest::newRow("remove 1 at 0, 100 buffer") << 0 << 0 << 0 << 1 << 100;
+    QTest::newRow("remove 1 at 0, 500 buffer") << 0 << 0 << 0 << 1 << 500;
+
+    QTest::newRow("remove 1 at 1, 0 buffer") << 0 << 0 << 1 << 1 << 0;
+    QTest::newRow("remove 1 at 1, 100 buffer") << 0 << 0 << 1 << 1 << 100;
+    QTest::newRow("remove 1 at 1, 500 buffer") << 0 << 0 << 1 << 1 << 500;
+
+    QTest::newRow("remove multiple at 0, 0 buffer") << 0 << 0 << 0 << 3 << 0;
+    QTest::newRow("remove multiple at 0, 100 buffer") << 0 << 0 << 0 << 3 << 100;
+    QTest::newRow("remove multiple at 0, 500 buffer") << 0 << 0 << 0 << 3 << 500;
+
+    QTest::newRow("remove multiple at 1, 0 buffer") << 0 << 0 << 1 << 3 << 0;
+    QTest::newRow("remove multiple at 1, 100 buffer") << 0 << 0 << 1 << 3 << 100;
+    QTest::newRow("remove multiple at 1, 500 buffer") << 0 << 0 << 1 << 3 << 500;
 }
 
 template <class T>
@@ -1952,6 +1982,8 @@ void tst_QQuickListView::sections(const QUrl &source)
         QQuickText *next = findItem<QQuickText>(item, "nextSection");
         QCOMPARE(next->text().toInt(), (i+1)/5);
     }
+
+    QVERIFY(!listview->property("sectionsInvalidOnCompletion").toBool());
 
     QSignalSpy currentSectionChangedSpy(listview, SIGNAL(currentSectionChanged()));
 
@@ -3653,6 +3685,35 @@ void tst_QQuickListView::header_delayItemCreation()
     QTRY_COMPARE(header->y(), -header->height());
 
     delete window;
+}
+
+void tst_QQuickListView::headerChangesViewport()
+{
+    QQuickView *window = getView();
+    window->rootContext()->setContextProperty("headerHeight", 20);
+    window->rootContext()->setContextProperty("headerWidth", 240);
+    window->setSource(testFileUrl("headerchangesviewport.qml"));
+
+    QQuickListView *listview = findItem<QQuickListView>(window->rootObject(), "list");
+    QTRY_VERIFY(listview != 0);
+    QTRY_COMPARE(QQuickItemPrivate::get(listview)->polishScheduled, false);
+
+    QQuickItem *contentItem = listview->contentItem();
+    QTRY_VERIFY(contentItem != 0);
+
+    QQuickText *header = 0;
+    QTRY_VERIFY(header = findItem<QQuickText>(contentItem, "header"));
+    QVERIFY(header == listview->headerItem());
+
+    QCOMPARE(header->height(), 20.);
+    QCOMPARE(listview->contentHeight(), 20.);
+
+    // change height
+    window->rootContext()->setContextProperty("headerHeight", 50);
+
+    // verify that list content height updates also
+    QCOMPARE(header->height(), 50.);
+    QCOMPARE(listview->contentHeight(), 50.);
 }
 
 void tst_QQuickListView::footer()
@@ -6958,6 +7019,43 @@ void tst_QQuickListView::testProxyModelChangedAfterMove()
     QTRY_COMPARE(listview->count(), 3);
 
     delete window;
+}
+
+void tst_QQuickListView::typedModel()
+{
+    QQmlEngine engine;
+    QQmlComponent component(&engine, testFileUrl("typedModel.qml"));
+
+    QScopedPointer<QObject> object(component.create());
+
+    QQuickListView *listview = qobject_cast<QQuickListView *>(object.data());
+    QVERIFY(listview);
+
+    QCOMPARE(listview->count(), 6);
+
+    QQmlListModel *listModel = 0;
+
+    listview->setModel(QVariant::fromValue(listModel));
+    QCOMPARE(listview->count(), 0);
+}
+
+void tst_QQuickListView::highlightItemGeometryChanges()
+{
+    QQmlEngine engine;
+    QQmlComponent component(&engine, testFileUrl("HighlightResize.qml"));
+
+    QScopedPointer<QObject> object(component.create());
+
+    QQuickListView *listview = qobject_cast<QQuickListView *>(object.data());
+    QVERIFY(listview);
+
+    QCOMPARE(listview->count(), 5);
+
+    for (int i = 0; i < listview->count(); ++i) {
+        listview->setCurrentIndex(i);
+        QTRY_COMPARE(listview->highlightItem()->width(), qreal(100 + i * 20));
+        QTRY_COMPARE(listview->highlightItem()->height(), qreal(100 + i * 10));
+    }
 }
 
 QTEST_MAIN(tst_QQuickListView)

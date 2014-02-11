@@ -41,6 +41,7 @@
 
 
 #include "qv4objectproto_p.h"
+#include "qv4argumentsobject_p.h"
 #include "qv4mm_p.h"
 #include "qv4scopedvalue_p.h"
 #include <QtCore/qnumeric.h>
@@ -76,7 +77,7 @@ DEFINE_MANAGED_VTABLE(ObjectCtor);
 ObjectCtor::ObjectCtor(ExecutionContext *scope)
     : FunctionObject(scope, QStringLiteral("Object"))
 {
-    vtbl = &static_vtbl;
+    setVTable(&static_vtbl);
 }
 
 ReturnedValue ObjectCtor::construct(Managed *that, CallData *callData)
@@ -91,14 +92,14 @@ ReturnedValue ObjectCtor::construct(Managed *that, CallData *callData)
             obj->setPrototype(proto.getPointer());
         return obj.asReturnedValue();
     }
-    return __qmljs_to_object(v4->current, ValueRef(&callData->args[0]));
+    return __qmljs_to_object(v4->currentContext(), ValueRef(&callData->args[0]));
 }
 
 ReturnedValue ObjectCtor::call(Managed *m, CallData *callData)
 {
     if (!callData->argc || callData->args[0].isUndefined() || callData->args[0].isNull())
         return m->engine()->newObject()->asReturnedValue();
-    return __qmljs_to_object(m->engine()->current, ValueRef(&callData->args[0]));
+    return __qmljs_to_object(m->engine()->currentContext(), ValueRef(&callData->args[0]));
 }
 
 void ObjectPrototype::init(ExecutionEngine *v4, ObjectRef ctor)
@@ -155,6 +156,9 @@ ReturnedValue ObjectPrototype::method_getOwnPropertyDescriptor(CallContext *ctx)
     Scoped<Object> O(scope, ctx->argument(0));
     if (!O)
         return ctx->throwTypeError();
+
+    if (O->isNonStrictArgumentsObject)
+        Scoped<ArgumentsObject>(scope, O)->fullyCreate();
 
     ScopedValue v(scope, ctx->argument(1));
     Scoped<String> name(scope, v->toString(ctx));
@@ -282,6 +286,9 @@ ReturnedValue ObjectPrototype::method_freeze(CallContext *ctx)
     Scoped<Object> o(scope, ctx->argument(0));
     if (!o)
         return ctx->throwTypeError();
+
+    if (o->isNonStrictArgumentsObject)
+        Scoped<ArgumentsObject>(scope, o)->fullyCreate();
 
     o->extensible = false;
 

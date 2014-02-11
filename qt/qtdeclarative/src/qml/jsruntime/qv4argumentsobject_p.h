@@ -54,7 +54,9 @@ struct ArgumentsGetterFunction: FunctionObject
     uint index;
 
     ArgumentsGetterFunction(ExecutionContext *scope, uint index)
-        : FunctionObject(scope), index(index) { vtbl = &static_vtbl; }
+        : FunctionObject(scope), index(index) {
+        setVTable(&static_vtbl);
+    }
 
     static ReturnedValue call(Managed *that, CallData *d);
 };
@@ -65,7 +67,9 @@ struct ArgumentsSetterFunction: FunctionObject
     uint index;
 
     ArgumentsSetterFunction(ExecutionContext *scope, uint index)
-        : FunctionObject(scope), index(index) { vtbl = &static_vtbl; }
+        : FunctionObject(scope), index(index) {
+        setVTable(&static_vtbl);
+    }
 
     static ReturnedValue call(Managed *that, CallData *callData);
 };
@@ -74,9 +78,11 @@ struct ArgumentsSetterFunction: FunctionObject
 struct ArgumentsObject: Object {
     Q_MANAGED
     CallContext *context;
+    bool fullyCreated;
     QVector<SafeValue> mappedArguments;
     ArgumentsObject(CallContext *context);
     ~ArgumentsObject() {}
+
 
     enum {
         LengthPropertyIndex = 0,
@@ -84,10 +90,14 @@ struct ArgumentsObject: Object {
         CallerPropertyIndex = 2
     };
     bool defineOwnProperty(ExecutionContext *ctx, uint index, const Property &desc, PropertyAttributes attrs);
-
+    static ReturnedValue getIndexed(Managed *m, uint index, bool *hasProperty);
+    static void putIndexed(Managed *m, uint index, const ValueRef value);
+    static bool deleteIndexedProperty(Managed *m, uint index);
+    static PropertyAttributes queryIndexed(const Managed *m, uint index);
     static void markObjects(Managed *that, ExecutionEngine *e);
-protected:
     static void destroy(Managed *);
+
+    void fullyCreate();
 };
 
 }

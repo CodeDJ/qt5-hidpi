@@ -52,6 +52,8 @@
 
 QT_BEGIN_NAMESPACE
 
+class QQmlEnginePrivate;
+
 namespace QV4 {
 class ExecutableAllocator;
 struct Function;
@@ -92,7 +94,7 @@ class Q_QML_EXPORT EvalISelFactory
 {
 public:
     virtual ~EvalISelFactory() = 0;
-    virtual EvalInstructionSelection *create(QV4::ExecutableAllocator *execAllocator, V4IR::Module *module, QV4::Compiler::JSUnitGenerator *jsGenerator) = 0;
+    virtual EvalInstructionSelection *create(QQmlEnginePrivate *qmlEngine, QV4::ExecutableAllocator *execAllocator, V4IR::Module *module, QV4::Compiler::JSUnitGenerator *jsGenerator) = 0;
     virtual bool jitCompileRegexps() const = 0;
 };
 
@@ -142,10 +144,11 @@ public: // to implement by subclasses:
     virtual void constructProperty(V4IR::Temp *base, const QString &name, V4IR::ExprList *args, V4IR::Temp *result) = 0;
     virtual void constructValue(V4IR::Temp *value, V4IR::ExprList *args, V4IR::Temp *result) = 0;
     virtual void loadThisObject(V4IR::Temp *temp) = 0;
-    virtual void loadQmlIdObject(int id, V4IR::Temp *temp) = 0;
+    virtual void loadQmlIdArray(V4IR::Temp *temp) = 0;
     virtual void loadQmlImportedScripts(V4IR::Temp *temp) = 0;
     virtual void loadQmlContextObject(V4IR::Temp *temp) = 0;
     virtual void loadQmlScopeObject(V4IR::Temp *temp) = 0;
+    virtual void loadQmlSingleton(const QString &name, V4IR::Temp *temp) = 0;
     virtual void loadConst(V4IR::Const *sourceConst, V4IR::Temp *targetTemp) = 0;
     virtual void loadString(const QString &str, V4IR::Temp *targetTemp) = 0;
     virtual void loadRegexp(V4IR::RegExp *sourceRegexp, V4IR::Temp *targetTemp) = 0;
@@ -153,7 +156,7 @@ public: // to implement by subclasses:
     virtual void setActivationProperty(V4IR::Expr *source, const QString &targetName) = 0;
     virtual void initClosure(V4IR::Closure *closure, V4IR::Temp *target) = 0;
     virtual void getProperty(V4IR::Expr *base, const QString &name, V4IR::Temp *target) = 0;
-    virtual void getQObjectProperty(V4IR::Expr *base, int propertyIndex, bool captureRequired, V4IR::Temp *targetTemp) = 0;
+    virtual void getQObjectProperty(V4IR::Expr *base, int propertyIndex, bool captureRequired, int attachedPropertiesId, V4IR::Temp *targetTemp) = 0;
     virtual void setProperty(V4IR::Expr *source, V4IR::Expr *targetBase, const QString &targetName) = 0;
     virtual void setQObjectProperty(V4IR::Expr *source, V4IR::Expr *targetBase, int propertyIndex) = 0;
     virtual void getElement(V4IR::Expr *base, V4IR::Expr *index, V4IR::Temp *target) = 0;

@@ -53,6 +53,7 @@
 #include "qv4scopedvalue_p.h"
 #include <private/qqmlcontextwrapper_p.h>
 #include "qv4qobjectwrapper_p.h"
+#include <private/qv8engine_p.h>
 
 #include <QtCore/qmath.h>
 #include <QtCore/qnumeric.h>
@@ -299,12 +300,34 @@ ReturnedValue __qmljs_delete_name(ExecutionContext *ctx, const StringRef name)
 
 QV4::ReturnedValue __qmljs_instanceof(ExecutionContext *ctx, const ValueRef left, const ValueRef right)
 {
-    Object *o = right->asObject();
-    if (!o)
+    FunctionObject *f = right->asFunctionObject();
+    if (!f)
         return ctx->throwTypeError();
 
-    bool r = o->hasInstance(left);
-    return Encode(r);
+    if (f->subtype == FunctionObject::BoundFunction)
+        f = static_cast<BoundFunction *>(f)->target;
+
+    Scope scope(ctx->engine);
+    ScopedObject v(scope, left);
+    if (!v)
+        return Encode(false);
+
+    Scoped<Object> o(scope, f->protoProperty());
+    if (!o) {
+        scope.engine->currentContext()->throwTypeError();
+        return Encode(false);
+    }
+
+    while (v) {
+        v = v->prototype();
+
+        if (! v)
+            break;
+        else if (o.getPointer() == v)
+            return Encode(true);
+    }
+
+    return Encode(false);
 }
 
 QV4::ReturnedValue __qmljs_in(ExecutionContext *ctx, const ValueRef left, const ValueRef right)
@@ -366,7 +389,7 @@ ReturnedValue __qmljs_object_default_value(Object *object, int typeHint)
     if (typeHint == NUMBER_HINT)
         qSwap(meth1, meth2);
 
-    ExecutionContext *ctx = engine->current;
+    ExecutionContext *ctx = engine->currentContext();
     Scope scope(ctx);
     ScopedCallData callData(scope, 0);
     callData->thisObject = object;
@@ -966,10 +989,10 @@ ReturnedValue __qmljs_construct_value(ExecutionContext *context, const ValueRef 
     return f->construct(callData);
 }
 
-ReturnedValue __qmljs_construct_property(ExecutionContext *context, const ValueRef base, const StringRef name, CallDataRef callData)
+ReturnedValue __qmljs_construct_property(ExecutionContext *context, const StringRef name, CallDataRef callData)
 {
     Scope scope(context);
-    ScopedObject thisObject(scope, base->toObject(context));
+    ScopedObject thisObject(scope, callData->thisObject.toObject(context));
     if (scope.engine->hasException)
         return Encode::undefined();
 
@@ -979,6 +1002,18 @@ ReturnedValue __qmljs_construct_property(ExecutionContext *context, const ValueR
 
     return f->construct(callData);
 }
+
+ReturnedValue __qmljs_construct_property_lookup(ExecutionContext *context, uint index, CallDataRef callData)
+{
+    Lookup *l = context->lookups + index;
+    SafeValue v;
+    v = l->getter(l, callData->thisObject);
+    if (!v.isManaged())
+        return context->throwTypeError();
+
+    return v.managed()->construct(callData);
+}
+
 
 void __qmljs_throw(ExecutionContext *context, const ValueRef value)
 {
@@ -1230,10 +1265,9 @@ ReturnedValue __qmljs_lookup_runtime_regexp(ExecutionContext *ctx, int id)
     return ctx->compilationUnit->runtimeRegularExpressions[id].asReturnedValue();
 }
 
-ReturnedValue __qmljs_get_id_object(NoThrowContext *ctx, int id)
+ReturnedValue __qmljs_get_id_array(NoThrowContext *ctx)
 {
-    QQmlContextData *context = QmlContextWrapper::callingContext(ctx->engine);
-    return QObjectWrapper::wrap(ctx->engine, context->idValues[id].data());
+    return ctx->engine->qmlContextObject()->getPointer()->as<QmlContextWrapper>()->idObjectsArray();
 }
 
 ReturnedValue __qmljs_get_context_object(NoThrowContext *ctx)
@@ -1257,7 +1291,19 @@ ReturnedValue __qmljs_get_qobject_property(ExecutionContext *ctx, const ValueRef
         ctx->throwTypeError(QStringLiteral("Cannot read property of null"));
         return Encode::undefined();
     }
-    return wrapper->getProperty(ctx, propertyIndex, captureRequired);
+    return QV4::QObjectWrapper::getProperty(wrapper->object(), ctx, propertyIndex, captureRequired);
+}
+
+QV4::ReturnedValue __qmljs_get_attached_property(ExecutionContext *ctx, int attachedPropertiesId, int propertyIndex)
+{
+    Scope scope(ctx);
+    QV4::Scoped<QmlContextWrapper> c(scope, ctx->engine->qmlContextObject()->getPointer()->as<QmlContextWrapper>());
+    QObject *scopeObject = c->getScopeObject();
+    QObject *attachedObject = qmlAttachedPropertiesObjectById(attachedPropertiesId, scopeObject);
+
+    QQmlEngine *qmlEngine = ctx->engine->v8Engine->engine();
+    QQmlData::ensurePropertyCache(qmlEngine, attachedObject);
+    return QV4::QObjectWrapper::getProperty(attachedObject, ctx, propertyIndex, /*captureRequired*/true);
 }
 
 void __qmljs_set_qobject_property(ExecutionContext *ctx, const ValueRef object, int propertyIndex, const ValueRef value)
@@ -1275,6 +1321,11 @@ ReturnedValue __qmljs_get_imported_scripts(NoThrowContext *ctx)
 {
     QQmlContextData *context = QmlContextWrapper::callingContext(ctx->engine);
     return context->importedScripts.value();
+}
+
+QV4::ReturnedValue __qmljs_get_qml_singleton(QV4::NoThrowContext *ctx, const QV4::StringRef name)
+{
+    return ctx->engine->qmlContextObject()->getPointer()->as<QmlContextWrapper>()->qmlSingletonWrapper(name);
 }
 
 void __qmljs_builtin_convert_this_to_object(ExecutionContext *ctx)

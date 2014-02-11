@@ -51,6 +51,7 @@
 #include <private/qqmljslexer_p.h>
 #include <private/qqmljsparser_p.h>
 #include <private/qqmljsast_p.h>
+#include <private/qqmlengine_p.h>
 #include <qv4jsir_p.h>
 #include <qv4codegen_p.h>
 
@@ -62,27 +63,41 @@ using namespace QV4;
 QmlBindingWrapper::QmlBindingWrapper(ExecutionContext *scope, Function *f, ObjectRef qml)
     : FunctionObject(scope, scope->engine->id_eval)
     , qml(qml)
+    , qmlContext(0)
 {
-    vtbl = &static_vtbl;
+    Q_ASSERT(scope->inUse);
+
+    setVTable(&static_vtbl);
     function = f;
     function->compilationUnit->ref();
     needsActivation = function->needsActivation();
+
+    Scope s(scope);
+    ScopedValue protectThis(s, this);
+
     defineReadonlyProperty(scope->engine->id_length, Primitive::fromInt32(1));
 
-    qmlContext = scope->engine->current->newQmlContext(this, qml);
+    qmlContext = scope->engine->currentContext()->newQmlContext(this, qml);
     scope->engine->popContext();
 }
 
 QmlBindingWrapper::QmlBindingWrapper(ExecutionContext *scope, ObjectRef qml)
     : FunctionObject(scope, scope->engine->id_eval)
     , qml(qml)
+    , qmlContext(0)
 {
-    vtbl = &static_vtbl;
+    Q_ASSERT(scope->inUse);
+
+    setVTable(&static_vtbl);
     function = 0;
     needsActivation = false;
+
+    Scope s(scope);
+    ScopedValue protectThis(s, this);
+
     defineReadonlyProperty(scope->engine->id_length, Primitive::fromInt32(1));
 
-    qmlContext = scope->engine->current->newQmlContext(this, qml);
+    qmlContext = scope->engine->currentContext()->newQmlContext(this, qml);
     scope->engine->popContext();
 }
 
@@ -110,7 +125,8 @@ void QmlBindingWrapper::markObjects(Managed *m, ExecutionEngine *e)
     if (wrapper->qml)
         wrapper->qml->mark(e);
     FunctionObject::markObjects(m, e);
-    wrapper->qmlContext->mark();
+    if (wrapper->qmlContext)
+        wrapper->qmlContext->mark(e);
 }
 
 DEFINE_MANAGED_VTABLE(QmlBindingWrapper);
@@ -124,7 +140,7 @@ struct CompilationUnitHolder : public QV4::Object
         , unit(unit)
     {
         unit->ref();
-        vtbl = &static_vtbl;
+        setVTable(&static_vtbl);
     }
     ~CompilationUnitHolder()
     {
@@ -214,7 +230,7 @@ void Script::parse()
             return;
 
         QV4::Compiler::JSUnitGenerator jsGenerator(&module);
-        QScopedPointer<EvalInstructionSelection> isel(v4->iselFactory->create(v4->executableAllocator, &module, &jsGenerator));
+        QScopedPointer<EvalInstructionSelection> isel(v4->iselFactory->create(QQmlEnginePrivate::get(v4), v4->executableAllocator, &module, &jsGenerator));
         if (inheritContext)
             isel->setUseFastLookups(false);
         QV4::CompiledData::CompilationUnit *compilationUnit = isel->compile();
@@ -226,7 +242,7 @@ void Script::parse()
     if (!vmFunction) {
         // ### FIX file/line number
         Scoped<Object> error(valueScope, v4->newSyntaxErrorObject(QStringLiteral("Syntax error")));
-        v4->current->throwError(error);
+        v4->currentContext()->throwError(error);
     }
 }
 
@@ -340,7 +356,7 @@ CompiledData::CompilationUnit *Script::precompile(ExecutionEngine *engine, const
     }
 
     Compiler::JSUnitGenerator jsGenerator(&module);
-    QScopedPointer<QQmlJS::EvalInstructionSelection> isel(engine->iselFactory->create(engine->executableAllocator, &module, &jsGenerator));
+    QScopedPointer<QQmlJS::EvalInstructionSelection> isel(engine->iselFactory->create(QQmlEnginePrivate::get(engine), engine->executableAllocator, &module, &jsGenerator));
     isel->setUseFastLookups(false);
     return isel->compile();
 }
@@ -361,7 +377,7 @@ QV4::ReturnedValue Script::evaluate(ExecutionEngine *engine,  const QString &scr
     QV4::Scope scope(engine);
     QV4::Script qmlScript(engine, scopeObject, script, QString());
 
-    QV4::ExecutionContext *ctx = engine->current;
+    QV4::ExecutionContext *ctx = engine->currentContext();
     qmlScript.parse();
     QV4::ScopedValue result(scope);
     if (!scope.engine->hasException)

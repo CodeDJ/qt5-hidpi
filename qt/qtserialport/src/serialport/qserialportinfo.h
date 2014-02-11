@@ -88,6 +88,9 @@ public:
     static QList<QSerialPortInfo> availablePorts();
 
 private:
+    friend QList<QSerialPortInfo> availablePortsByUdev();
+    friend QList<QSerialPortInfo> availablePortsBySysfs();
+    friend QList<QSerialPortInfo> availablePortsByFiltersOfDevices();
     QScopedPointer<QSerialPortInfoPrivate, QSerialPortInfoPrivateDeleter> d_ptr;
 };
 

@@ -59,6 +59,7 @@ QT_BEGIN_NAMESPACE
 
 class QGstreamerMessage;
 class QGstreamerBusHelper;
+class CameraBinControl;
 class CameraBinAudioEncoder;
 class CameraBinVideoEncoder;
 class CameraBinImageEncoder;
@@ -73,6 +74,7 @@ class CameraBinZoom;
 class CameraBinCaptureDestination;
 class CameraBinCaptureBufferFormat;
 class QGstreamerVideoRendererInterface;
+class CameraBinViewfinderSettings;
 
 class QGstreamerElementFactory
 {
@@ -117,6 +119,9 @@ public:
     QDir defaultDir(QCamera::CaptureModes mode) const;
     QString generateFileName(const QString &prefix, const QDir &dir, const QString &ext) const;
 
+    GstElement *buildCameraSource();
+
+    CameraBinControl *cameraControl() const { return m_cameraControl; }
     CameraBinAudioEncoder *audioEncodeControl() const { return m_audioEncodeControl; }
     CameraBinVideoEncoder *videoEncodeControl() const { return m_videoEncodeControl; }
     CameraBinImageEncoder *imageEncodeControl() const { return m_imageEncodeControl; }
@@ -132,7 +137,7 @@ public:
     CameraBinImageProcessing *imageProcessingControl() const { return m_imageProcessingControl; }
     CameraBinCaptureDestination *captureDestinationControl() const { return m_captureDestinationControl; }
     CameraBinCaptureBufferFormat *captureBufferFormatControl() const { return m_captureBufferFormatControl; }
-
+    CameraBinViewfinderSettings *viewfinderSettingsControl() const { return m_viewfinderSettingsControl; }
 
     CameraBinRecorder *recorderControl() const { return m_recorderControl; }
     CameraBinContainer *mediaContainerControl() const { return m_mediaContainerControl; }
@@ -188,7 +193,7 @@ private slots:
 private:
     bool setupCameraBin();
     void setupCaptureResolution();
-    GstElement *buildCameraSource();
+    void setAudioCaptureCaps();
     static void updateBusyStatus(GObject *o, GParamSpec *p, gpointer d);
 
     QUrl m_sink;
@@ -209,6 +214,7 @@ private:
     QObject *m_viewfinder;
     QGstreamerVideoRendererInterface *m_viewfinderInterface;
 
+    CameraBinControl *m_cameraControl;
     CameraBinAudioEncoder *m_audioEncodeControl;
     CameraBinVideoEncoder *m_videoEncodeControl;
     CameraBinImageEncoder *m_imageEncodeControl;
@@ -225,6 +231,7 @@ private:
     CameraBinImageProcessing *m_imageProcessingControl;
     CameraBinCaptureDestination *m_captureDestinationControl;
     CameraBinCaptureBufferFormat *m_captureBufferFormatControl;
+    CameraBinViewfinderSettings *m_viewfinderSettingsControl;
 
     QGstreamerBusHelper *m_busHelper;
     GstBus* m_bus;

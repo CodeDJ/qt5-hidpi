@@ -150,7 +150,7 @@
     If you installed additional OpenGL drivers from your hardware vendor, then
     you may want to consider using this version of OpenGL instead of ANGLE. To
     use OpenGL, pass the command line options \c{-opengl desktop} to the
-    the configure script.
+    configure script.
 
     \code
     configure -opengl desktop
@@ -733,7 +733,7 @@
 
     \list
     \li \c{C:/customPath/plugins}
-    \li \c{C:/Qt/5.2.0/plugins}
+    \li \c{C:/Qt/5.2.1/plugins}
     \li \c{E:/myApplication/directory}
     \endlist
 
@@ -776,7 +776,7 @@
     \section1 Step 2: Unpack the Archive
 
         Uncompress the files into the directory you want Qt installed;
-        e.g. \c{C:\Qt\5.2.0}.
+        e.g. \c{C:\Qt\5.2.1}.
 
         \note The install path must not contain any spaces or Windows specific
         file system characters.

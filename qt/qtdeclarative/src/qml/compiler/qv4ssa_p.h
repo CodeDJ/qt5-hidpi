@@ -46,6 +46,7 @@
 
 QT_BEGIN_NAMESPACE
 class QTextStream;
+class QQmlEnginePrivate;
 
 namespace QQmlJS {
 namespace V4IR {
@@ -92,6 +93,7 @@ public:
     void setFrom(Stmt *from);
     void addRange(int from, int to);
     Ranges ranges() const { return _ranges; }
+    void reserveRanges(int capacity) { _ranges.reserve(capacity); }
 
     int start() const { return _ranges.first().start; }
     int end() const { return _end; }
@@ -129,7 +131,7 @@ public:
         , inSSA(false)
     {}
 
-    void run();
+    void run(QQmlEnginePrivate *qmlEngine);
     void convertOutOfSSA();
 
     bool isInSSA() const
@@ -164,10 +166,11 @@ class MoveMapping
         bool operator==(const Move &other) const
         { return from == other.from && to == other.to; }
     };
+    typedef QList<Move> Moves;
 
-    QList<Move> _moves;
+    Moves _moves;
 
-    int isUsedAsSource(Expr *e) const;
+    static Moves sourceUsages(Expr *e, const Moves &moves);
 
 public:
     void add(Expr *from, Temp *to, int id = 0);

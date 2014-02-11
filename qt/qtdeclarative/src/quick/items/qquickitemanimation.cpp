@@ -429,7 +429,7 @@ QAbstractAnimationJob* QQuickParentAnimation::transition(QQuickStateActions &act
     When an AnchorAnimation is used in a \l Transition, it will
     animate any AnchorChanges that have occurred during the state change.
     This can be overridden by setting a specific target item using the
-    \l target property.
+    \l {AnchorChanges::target}{AnchorChanges.target} property.
 
     \note AnchorAnimation can only be used in a \l Transition and in
     conjunction with an AnchorChange. It cannot be used in behaviors and
@@ -486,6 +486,7 @@ void QQuickAnchorAnimation::setDuration(int duration)
 }
 
 /*!
+    \qmlpropertygroup QtQuick::AnchorAnimation::easing
     \qmlproperty enumeration QtQuick::AnchorAnimation::easing.type
     \qmlproperty real QtQuick::AnchorAnimation::easing.amplitude
     \qmlproperty real QtQuick::AnchorAnimation::easing.overshoot
@@ -622,6 +623,7 @@ void QQuickPathAnimation::setDuration(int duration)
 }
 
 /*!
+    \qmlpropertygroup QtQuick::PathAnimation::easing
     \qmlproperty enumeration QtQuick::PathAnimation::easing.type
     \qmlproperty real QtQuick::PathAnimation::easing.amplitude
     \qmlproperty list<real> QtQuick::PathAnimation::easing.bezierCurve

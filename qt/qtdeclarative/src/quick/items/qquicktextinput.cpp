@@ -1679,6 +1679,7 @@ bool QQuickTextInput::event(QEvent* ev)
             || ke == QKeySequence::SelectAll
             || ke == QKeySequence::SelectEndOfDocument) {
             ke->accept();
+            return true;
         } else if (ke->modifiers() == Qt::NoModifier || ke->modifiers() == Qt::ShiftModifier
                    || ke->modifiers() == Qt::KeypadModifier) {
             if (ke->key() < Qt::Key_Escape) {
@@ -1692,6 +1693,7 @@ bool QQuickTextInput::event(QEvent* ev)
                 case Qt::Key_Backspace:
                 case Qt::Key_Left:
                 case Qt::Key_Right:
+                    ke->accept();
                     return true;
                 default:
                     break;
@@ -2533,7 +2535,7 @@ void QQuickTextInputPrivate::handleFocusEvent(QFocusEvent *event)
                 && !persistentSelection)
             deselect();
 
-        if (hasAcceptableInput(m_text) || fixup())
+        if (q->hasAcceptableInput() || fixup())
             emit q->editingFinished();
 
 #ifndef QT_NO_IM
@@ -3392,7 +3394,6 @@ bool QQuickTextInputPrivate::finishChange(int validateFromState, bool update, bo
 */
 void QQuickTextInputPrivate::internalSetText(const QString &txt, int pos, bool edited)
 {
-    Q_Q(QQuickTextInput);
     internalDeselect();
     QString oldText = m_text;
     if (m_maskData) {
@@ -3410,6 +3411,7 @@ void QQuickTextInputPrivate::internalSetText(const QString &txt, int pos, bool e
 #ifdef QT_NO_ACCESSIBILITY
     Q_UNUSED(changed)
 #else
+    Q_Q(QQuickTextInput);
     if (changed && QAccessible::isActive()) {
         if (QObject *acc = QQuickAccessibleAttached::findAccessible(q, QAccessible::EditableText)) {
             QAccessibleTextUpdateEvent ev(acc, 0, oldText, m_text);
@@ -4117,7 +4119,7 @@ void QQuickTextInputPrivate::processKeyEvent(QKeyEvent* event)
     Q_Q(QQuickTextInput);
 
     if (event->key() == Qt::Key_Enter || event->key() == Qt::Key_Return) {
-        if (hasAcceptableInput(m_text) || fixup()) {
+        if (q->hasAcceptableInput() || fixup()) {
             emit q->accepted();
             emit q->editingFinished();
         }

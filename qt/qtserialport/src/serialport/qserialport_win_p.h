@@ -57,10 +57,6 @@ QT_BEGIN_NAMESPACE
 class QThread;
 #endif
 
-#ifndef Q_OS_WINCE
-class AbstractOverlappedEventNotifier;
-#endif
-
 class QSerialPortPrivate : public QSerialPortPrivateData
 {
     Q_DECLARE_PUBLIC(QSerialPort)
@@ -82,12 +78,9 @@ public:
     bool sendBreak(int duration);
     bool setBreakEnabled(bool set);
 
-    qint64 systemInputQueueSize () const;
-    qint64 systemOutputQueueSize () const;
+    qint64 systemInputQueueSize ();
+    qint64 systemOutputQueueSize ();
 
-    qint64 bytesAvailable() const;
-
-    qint64 readFromBuffer(char *data, qint64 maxSize);
     qint64 writeToBuffer(const char *data, qint64 maxSize);
 
     bool waitForReadyRead(int msec);
@@ -101,17 +94,19 @@ public:
     bool setDataErrorPolicy(QSerialPort::DataErrorPolicy policy);
 
     void processIoErrors(bool error);
+    QSerialPort::SerialPortError decodeSystemError() const;
 #ifndef Q_OS_WINCE
+    void _q_canCompleteCommunication();
+    void _q_canCompleteRead();
+    void _q_canCompleteWrite();
+
     bool startAsyncRead();
-    bool startAsyncWrite(int maxSize = INT_MAX);
+    bool startAsyncWrite();
     void completeAsyncRead(DWORD numberOfBytes);
     void completeAsyncWrite(DWORD numberOfBytes);
-    AbstractOverlappedEventNotifier *lookupFreeWriteCompletionNotifier();
-    AbstractOverlappedEventNotifier *lookupCommEventNotifier();
-    AbstractOverlappedEventNotifier *lookupReadCompletionNotifier();
 #else
     bool notifyRead();
-    bool notifyWrite(int maxSize = INT_MAX);
+    bool notifyWrite();
 #endif
 
     static QString portNameToSystemLocation(const QString &port);
@@ -130,12 +125,17 @@ public:
     bool parityErrorOccurred;
 
 #ifndef Q_OS_WINCE
-    QHash<HANDLE, AbstractOverlappedEventNotifier *> notifiers;
-    qint64 actualReadBufferSize;
-    qint64 actualWriteBufferSize;
-    qint64 acyncWritePosition;
+    QByteArray readChunkBuffer;
     bool readyReadEmitted;
     bool writeSequenceStarted;
+    QWinEventNotifier *communicationNotifier;
+    QWinEventNotifier *readCompletionNotifier;
+    QWinEventNotifier *writeCompletionNotifier;
+    OVERLAPPED communicationOverlapped;
+    OVERLAPPED readCompletionOverlapped;
+    OVERLAPPED writeCompletionOverlapped;
+    DWORD originalEventMask;
+    DWORD triggeredEventMask;
 #else
     QThread *eventNotifier;
     QMutex settingsChangeMutex;
@@ -146,11 +146,9 @@ private:
     bool updateCommTimeouts();
 
     void detectDefaultSettings();
-    QSerialPort::SerialPortError decodeSystemError() const;
 
 #ifndef Q_OS_WINCE
-    bool waitAnyEvent(int msecs, bool *timedOut,
-                      AbstractOverlappedEventNotifier **triggeredNotifier);
+    bool waitAnyEvent(int msecs, bool *timedOut, HANDLE *triggeredEvent);
 #else
     bool waitForReadOrWrite(bool *selectForRead, bool *selectForWrite,
                             bool checkRead, bool checkWrite,

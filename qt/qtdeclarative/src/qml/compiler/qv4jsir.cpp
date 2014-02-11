@@ -72,6 +72,7 @@ QString typeName(Type t)
     case NumberType: return QStringLiteral("number");
     case StringType: return QStringLiteral("string");
     case VarType: return QStringLiteral("var");
+    case QObjectType: return QStringLiteral("qobject");
     default: return QStringLiteral("multiple");
     }
 }
@@ -274,8 +275,16 @@ static QString dumpStart(const Expr *e) {
     if (e->type == UnknownType)
 //        return QStringLiteral("**UNKNOWN**");
         return QString();
-    else
-        return typeName(e->type) + QStringLiteral("{");
+
+    QString result = typeName(e->type);
+    const Temp *temp = const_cast<Expr*>(e)->asTemp();
+    if (e->type == QObjectType && temp && temp->memberResolver.isQObjectResolver) {
+        result += QLatin1Char('<');
+        result += QString::fromUtf8(static_cast<QQmlPropertyCache*>(temp->memberResolver.data)->className());
+        result += QLatin1Char('>');
+    }
+    result += QLatin1Char('{');
+    return result;
 }
 
 static const char *dumpEnd(const Expr *e) {
@@ -363,6 +372,8 @@ void Name::initGlobal(const QString *id, quint32 line, quint32 column)
     this->id = id;
     this->builtin = builtin_invalid;
     this->global = true;
+    this->qmlSingleton = false;
+    this->freeOfSideEffects = false;
     this->line = line;
     this->column = column;
 }
@@ -372,6 +383,8 @@ void Name::init(const QString *id, quint32 line, quint32 column)
     this->id = id;
     this->builtin = builtin_invalid;
     this->global = false;
+    this->qmlSingleton = false;
+    this->freeOfSideEffects = false;
     this->line = line;
     this->column = column;
 }
@@ -381,6 +394,8 @@ void Name::init(Builtin builtin, quint32 line, quint32 column)
     this->id = 0;
     this->builtin = builtin;
     this->global = false;
+    this->qmlSingleton = false;
+    this->freeOfSideEffects = false;
     this->line = line;
     this->column = column;
 }
@@ -424,8 +439,8 @@ static const char *builtin_to_string(Name::Builtin b)
         return "builtin_setup_argument_object";
     case V4IR::Name::builtin_convert_this_to_object:
         return "builtin_convert_this_to_object";
-    case V4IR::Name::builtin_qml_id_scope:
-        return "builtin_qml_id_scope";
+    case V4IR::Name::builtin_qml_id_array:
+        return "builtin_qml_id_array";
     case V4IR::Name::builtin_qml_imported_scripts_object:
         return "builtin_qml_imported_scripts_object";
     case V4IR::Name::builtin_qml_scope_object:
@@ -539,9 +554,12 @@ void Subscript::dump(QTextStream &out) const
 
 void Member::dump(QTextStream &out) const
 {
-    base->dump(out);
+    if (kind != MemberOfEnum && attachedPropertiesIdOrEnumValue != 0 && !base->asTemp())
+        out << "[[attached property from " << attachedPropertiesIdOrEnumValue << "]]";
+    else
+        base->dump(out);
     out << '.' << *name;
-    if (type == MemberOfQObject)
+    if (property)
         out << " (meta-property " << property->coreIndex << " <" << QMetaType::typeName(property->propType) << ">)";
 }
 
@@ -825,24 +843,10 @@ Expr *BasicBlock::SUBSCRIPT(Expr *base, Expr *index)
     return e;
 }
 
-Expr *BasicBlock::MEMBER(Expr *base, const QString *name)
+Expr *BasicBlock::MEMBER(Expr *base, const QString *name, QQmlPropertyData *property, uchar kind, int attachedPropertiesIdOrEnumValue)
 {
     Member*e = function->New<Member>();
-    e->init(base, name);
-    return e;
-}
-
-Expr *BasicBlock::QML_CONTEXT_MEMBER(Expr *base, const QString *id, int memberIndex)
-{
-    Member*e = function->New<Member>();
-    e->initQmlContextMember(base, id, memberIndex);
-    return e;
-}
-
-Expr *BasicBlock::QML_QOBJECT_PROPERTY(Expr *base, const QString *id, QQmlPropertyData *property)
-{
-    Member*e = function->New<Member>();
-    e->initMetaProperty(base, id, property);
+    e->init(base, name, property, kind, attachedPropertiesIdOrEnumValue);
     return e;
 }
 
@@ -1032,14 +1036,8 @@ void CloneExpr::visitSubscript(Subscript *e)
 
 void CloneExpr::visitMember(Member *e)
 {
-    if (e->type == Member::MemberByName)
-        cloned = block->MEMBER(clone(e->base), e->name);
-    else if (e->type == Member::MemberOfQmlContext)
-        cloned = block->QML_CONTEXT_MEMBER(clone(e->base), e->name, e->memberIndex);
-    else if (e->type == Member::MemberOfQObject)
-        cloned = block->QML_QOBJECT_PROPERTY(clone(e->base), e->name, e->property);
-    else
-        Q_ASSERT(!"Unimplemented!");
+    Expr *clonedBase = clone(e->base);
+    cloned = block->MEMBER(clonedBase, e->name, e->property, e->kind, e->attachedPropertiesIdOrEnumValue);
 }
 
 } // end of namespace IR
