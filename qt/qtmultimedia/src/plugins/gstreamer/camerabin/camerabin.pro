@@ -29,7 +29,8 @@ HEADERS += \
     $$PWD/camerabinvideoencoder.h \
     $$PWD/camerabinresourcepolicy.h \
     $$PWD/camerabincapturedestination.h \
-    $$PWD/camerabincapturebufferformat.h
+    $$PWD/camerabincapturebufferformat.h \
+    $$PWD/camerabinviewfindersettings.h
 
 SOURCES += \
     $$PWD/camerabinserviceplugin.cpp \
@@ -46,6 +47,7 @@ SOURCES += \
     $$PWD/camerabinvideoencoder.cpp \
     $$PWD/camerabinresourcepolicy.cpp \
     $$PWD/camerabincapturedestination.cpp \
+    $$PWD/camerabinviewfindersettings.cpp \
     $$PWD/camerabincapturebufferformat.cpp
 
 maemo6 {
@@ -58,7 +60,7 @@ maemo6 {
     CONFIG += have_gst_photography
 }
 
-have_gst_photography {
+config_gstreamer_photography {
     DEFINES += HAVE_GST_PHOTOGRAPHY
 
     HEADERS += \

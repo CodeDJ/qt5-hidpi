@@ -599,6 +599,28 @@ bool QQuickWindowPrivate::translateTouchToMouse(QQuickItem *item, QTouchEvent *e
     return false;
 }
 
+void QQuickWindowPrivate::setMouseGrabber(QQuickItem *grabber)
+{
+    Q_Q(QQuickWindow);
+    if (mouseGrabberItem == grabber)
+        return;
+
+    QQuickItem *oldGrabber = mouseGrabberItem;
+    mouseGrabberItem = grabber;
+
+    if (touchMouseId != -1) {
+        // update the touch item for mouse touch id to the new grabber
+        itemForTouchPointId.remove(touchMouseId);
+        if (grabber)
+            itemForTouchPointId[touchMouseId] = grabber;
+    }
+
+    if (oldGrabber) {
+        QEvent ev(QEvent::UngrabMouse);
+        q->sendEvent(oldGrabber, &ev);
+    }
+}
+
 void QQuickWindowPrivate::transformTouchPoints(QList<QTouchEvent::TouchPoint> &touchPoints, const QTransform &transform)
 {
     QMatrix4x4 transformMatrix(transform);
@@ -660,19 +682,24 @@ void QQuickWindowPrivate::setFocusInScope(QQuickItem *scope, QQuickItem *item, Q
     QQuickItemPrivate *scopePrivate = scope ? QQuickItemPrivate::get(scope) : 0;
     QQuickItemPrivate *itemPrivate = QQuickItemPrivate::get(item);
 
+    QQuickItem *currentActiveFocusItem = activeFocusItem;
     QQuickItem *newActiveFocusItem = 0;
 
     QVarLengthArray<QQuickItem *, 20> changed;
 
     // Does this change the active focus?
-    if (item == contentItem || (scopePrivate->activeFocus && item->isEnabled())) {
+    if (item == contentItem || scopePrivate->activeFocus) {
         QQuickItem *oldActiveFocusItem = 0;
         oldActiveFocusItem = activeFocusItem;
-        newActiveFocusItem = item;
-        while (newActiveFocusItem->isFocusScope()
-               && newActiveFocusItem->scopedFocusItem()
-               && newActiveFocusItem->scopedFocusItem()->isEnabled()) {
-            newActiveFocusItem = newActiveFocusItem->scopedFocusItem();
+        if (item->isEnabled()) {
+            newActiveFocusItem = item;
+            while (newActiveFocusItem->isFocusScope()
+                   && newActiveFocusItem->scopedFocusItem()
+                   && newActiveFocusItem->scopedFocusItem()->isEnabled()) {
+                newActiveFocusItem = newActiveFocusItem->scopedFocusItem();
+            }
+        } else {
+            newActiveFocusItem = scope;
         }
 
         if (oldActiveFocusItem) {
@@ -732,7 +759,8 @@ void QQuickWindowPrivate::setFocusInScope(QQuickItem *scope, QQuickItem *item, Q
         q->sendEvent(newActiveFocusItem, &event);
     }
 
-    emit q->focusObjectChanged(activeFocusItem);
+    if (activeFocusItem != currentActiveFocusItem)
+        emit q->focusObjectChanged(activeFocusItem);
 
     if (!changed.isEmpty())
         notifyFocusChangesRecur(changed.data(), changed.count() - 1);
@@ -759,6 +787,7 @@ void QQuickWindowPrivate::clearFocusInScope(QQuickItem *scope, QQuickItem *item,
             return;//No focus, nothing to do.
     }
 
+    QQuickItem *currentActiveFocusItem = activeFocusItem;
     QQuickItem *oldActiveFocusItem = 0;
     QQuickItem *newActiveFocusItem = 0;
 
@@ -815,7 +844,8 @@ void QQuickWindowPrivate::clearFocusInScope(QQuickItem *scope, QQuickItem *item,
         q->sendEvent(newActiveFocusItem, &event);
     }
 
-    emit q->focusObjectChanged(activeFocusItem);
+    if (activeFocusItem != currentActiveFocusItem)
+        emit q->focusObjectChanged(activeFocusItem);
 
     if (!changed.isEmpty())
         notifyFocusChangesRecur(changed.data(), changed.count() - 1);
@@ -1213,8 +1243,11 @@ bool QQuickWindow::event(QEvent *e)
     case QEvent::TouchEnd: {
         QTouchEvent *touch = static_cast<QTouchEvent*>(e);
         d->translateTouchEvent(touch);
-        // return in order to avoid the QWindow::event below
-        return d->deliverTouchEvent(touch);
+        d->deliverTouchEvent(touch);
+        // we consume all touch events ourselves to avoid duplicate
+        // mouse delivery by QtGui mouse synthesis
+        e->accept();
+        return true;
     }
         break;
     case QEvent::TouchCancel:
@@ -1768,7 +1801,10 @@ bool QQuickWindowPrivate::deliverMatchingPointsToItem(QQuickItem *item, QTouchEv
     // First check whether the parent wants to be a filter,
     // and if the parent accepts the event we are done.
     if (sendFilteredTouchEvent(item->parentItem(), item, event)) {
-        event->accept();
+        // If the touch was accepted (regardless by whom or in what form),
+        // update acceptedNewPoints
+        foreach (int id, matchingNewPoints)
+            acceptedNewPoints->insert(id);
         return true;
     }
 
@@ -2281,6 +2317,8 @@ void QQuickWindowPrivate::cleanupNodesOnShutdown(QQuickItem *item)
 
         p->groupNode = 0;
         p->paintNode = 0;
+
+        p->dirty(QQuickItemPrivate::Window);
     }
 
     for (int ii = 0; ii < p->childItems.count(); ++ii)
@@ -2795,6 +2833,7 @@ QImage QQuickWindow::grabWindow()
 
         QOpenGLContext context;
         context.setFormat(requestedFormat());
+        context.setShareContext(QSGContext::sharedOpenGLContext());
         context.create();
         context.makeCurrent(this);
         d->context->initialize(&context);
@@ -3260,7 +3299,7 @@ void QQuickWindow::resetOpenGLState()
     additional content like popups, dialogs, status bars, or similar
     in relation to the window.
 
-    The recommended orientation is \l Screen.orientation, but
+    The recommended orientation is \l {Screen::orientation}{Screen.orientation}, but
     an application doesn't have to support all possible orientations,
     and thus can opt to ignore the current screen orientation.
 

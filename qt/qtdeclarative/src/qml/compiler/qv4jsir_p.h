@@ -55,6 +55,7 @@
 #include "private/qv4global_p.h"
 #include <private/qqmljsmemorypool_p.h>
 #include <private/qqmljsastfwd_p.h>
+#include <private/qflagpointer_p.h>
 
 #include <QtCore/QVector>
 #include <QtCore/QString>
@@ -73,6 +74,8 @@ QT_BEGIN_NAMESPACE
 class QTextStream;
 class QQmlType;
 class QQmlPropertyData;
+class QQmlPropertyCache;
+class QQmlEnginePrivate;
 
 namespace QV4 {
 struct ExecutionContext;
@@ -121,6 +124,14 @@ struct Jump;
 struct CJump;
 struct Ret;
 struct Phi;
+
+// Flag pointer:
+// * The first flag indicates whether the meta object is final.
+//   If final, then none of its properties themselves need to
+//   be final when considering for lookups in QML.
+// * The second flag indicates whether enums should be included
+//   in the lookup of properties or not. The default is false.
+typedef QFlagPointer<QQmlPropertyCache> IRMetaObject;
 
 enum AluOp {
     OpInvalid = 0,
@@ -181,7 +192,8 @@ enum Type {
     NumberType    = SInt32Type | UInt32Type | DoubleType,
 
     StringType    = 1 << 7,
-    VarType       = 1 << 8
+    QObjectType   = 1 << 8,
+    VarType       = 1 << 9
 };
 
 inline bool strictlyEqualTypes(Type t1, Type t2)
@@ -216,6 +228,24 @@ struct StmtVisitor {
     virtual void visitCJump(CJump *) = 0;
     virtual void visitRet(Ret *) = 0;
     virtual void visitPhi(Phi *) = 0;
+};
+
+
+struct MemberExpressionResolver
+{
+    typedef Type (*ResolveFunction)(QQmlEnginePrivate *engine, MemberExpressionResolver *resolver, Member *member);
+
+    MemberExpressionResolver()
+        : resolveMember(0), data(0), extraData(0), flags(0), isQObjectResolver(false) {}
+
+    bool isValid() const { return !!resolveMember; }
+    void clear() { *this = MemberExpressionResolver(); }
+
+    ResolveFunction resolveMember;
+    void *data; // Could be pointer to meta object, importNameSpace, etc. - depends on resolveMember implementation
+    void *extraData; // Could be QQmlTypeNameCache
+    unsigned int flags : 31;
+    unsigned int isQObjectResolver; // neede for IR dump helpers
 };
 
 struct Expr {
@@ -325,7 +355,7 @@ struct Name: Expr {
         builtin_define_object_literal,
         builtin_setup_argument_object,
         builtin_convert_this_to_object,
-        builtin_qml_id_scope,
+        builtin_qml_id_array,
         builtin_qml_imported_scripts_object,
         builtin_qml_context_object,
         builtin_qml_scope_object
@@ -333,7 +363,9 @@ struct Name: Expr {
 
     const QString *id;
     Builtin builtin;
-    bool global;
+    bool global : 1;
+    bool qmlSingleton : 1;
+    bool freeOfSideEffects : 1;
     quint32 line;
     quint32 column;
 
@@ -360,9 +392,12 @@ struct Temp: Expr {
     };
 
     unsigned index;
-    unsigned scope : 28; // how many scopes outside the current one?
+    unsigned scope : 27; // how many scopes outside the current one?
     unsigned kind  : 3;
     unsigned isArgumentsOrEval : 1;
+    unsigned isReadOnly : 1;
+    // Used when temp is used as base in member expression
+    MemberExpressionResolver memberResolver;
 
     void init(unsigned kind, unsigned index, unsigned scope)
     {
@@ -374,10 +409,11 @@ struct Temp: Expr {
         this->index = index;
         this->scope = scope;
         this->isArgumentsOrEval = false;
+        this->isReadOnly = false;
     }
 
     virtual void accept(ExprVisitor *v) { v->visitTemp(this); }
-    virtual bool isLValue() { return true; }
+    virtual bool isLValue() { return !isReadOnly; }
     virtual Temp *asTemp() { return this; }
 
     virtual void dump(QTextStream &out) const;
@@ -518,47 +554,53 @@ struct Subscript: Expr {
 };
 
 struct Member: Expr {
-    enum MemberType {
-        MemberByName,
-        // QML extensions
-        MemberOfQmlContext, // lookup in context's id values
-        MemberOfQObject
+    // Used for property dependency tracking
+    enum MemberKind {
+        UnspecifiedMember,
+        MemberOfEnum,
+        MemberOfQmlScopeObject,
+        MemberOfQmlContextObject
     };
 
-    MemberType type;
     Expr *base;
     const QString *name;
-    int memberIndex; // used if type == MemberOfQmlContext
     QQmlPropertyData *property;
+    int attachedPropertiesIdOrEnumValue; // depending on kind
+    uchar memberIsEnum : 1;
+    uchar freeOfSideEffects : 1;
 
-    void init(Expr *base, const QString *name)
-    {
-        this->type = MemberByName;
-        this->base = base;
-        this->name = name;
-        this->memberIndex = -1;
-        this->property = 0;
+    // This is set for example for for QObject properties. All sorts of extra behavior
+    // is defined when writing to them, for example resettable properties are reset
+    // when writing undefined to them, and an exception is thrown when they're missing
+    // a reset function. And then there's also Qt.binding().
+    uchar inhibitTypeConversionOnWrite: 1;
+
+    uchar kind: 3; // MemberKind
+
+    void setEnumValue(int value) {
+        kind = MemberOfEnum;
+        attachedPropertiesIdOrEnumValue = value;
     }
 
-    void initQmlContextMember(Expr *base, const QString *name, int memberIndex)
-    {
-        this->type = MemberOfQmlContext;
-        this->base = base;
-        this->name = name;
-        this->memberIndex = memberIndex;
-        this->property = 0;
+    void setAttachedPropertiesId(int id) {
+        Q_ASSERT(kind != MemberOfEnum);
+        attachedPropertiesIdOrEnumValue = id;
     }
 
-    void initMetaProperty(Expr *base, const QString *name, QQmlPropertyData *property)
+    void init(Expr *base, const QString *name, QQmlPropertyData *property = 0, uchar kind = UnspecifiedMember, int attachedPropertiesIdOrEnumValue = 0)
     {
-        this->type = MemberOfQObject;
         this->base = base;
         this->name = name;
         this->property = property;
+        this->attachedPropertiesIdOrEnumValue = attachedPropertiesIdOrEnumValue;
+        this->memberIsEnum = false;
+        this->freeOfSideEffects = false;
+        this->inhibitTypeConversionOnWrite = property != 0;
+        this->kind = kind;
     }
 
     virtual void accept(ExprVisitor *v) { v->visitMember(this); }
-    virtual bool isLValue() { return type != MemberOfQmlContext; }
+    virtual bool isLValue() { return true; }
     virtual Member *asMember() { return this; }
 
     virtual void dump(QTextStream &out) const;
@@ -717,6 +759,9 @@ struct Q_QML_EXPORT Module {
     void setFileName(const QString &name);
 };
 
+// Map from meta property index (existence implies dependency) to notify signal index
+typedef QHash<int, int> PropertyDependencyMap;
+
 struct Function {
     Module *module;
     MemoryPool *pool;
@@ -747,10 +792,8 @@ struct Function {
 
     // Qml extension:
     QSet<int> idObjectDependencies;
-    QSet<QQmlPropertyData*> contextObjectDependencies;
-    QSet<QQmlPropertyData*> scopeObjectDependencies;
-
-    bool hasQmlDependencies() const { return !idObjectDependencies.isEmpty() || !contextObjectDependencies.isEmpty() || !scopeObjectDependencies.isEmpty(); }
+    PropertyDependencyMap contextObjectPropertyDependencies;
+    PropertyDependencyMap scopeObjectPropertyDependencies;
 
     template <typename _Tp> _Tp *New() { return new (pool->allocate(sizeof(_Tp))) _Tp(); }
 
@@ -860,9 +903,7 @@ struct BasicBlock {
     Expr *CALL(Expr *base, ExprList *args = 0);
     Expr *NEW(Expr *base, ExprList *args = 0);
     Expr *SUBSCRIPT(Expr *base, Expr *index);
-    Expr *MEMBER(Expr *base, const QString *name);
-    Expr *QML_CONTEXT_MEMBER(Expr *base, const QString *id, int memberIndex);
-    Expr *QML_QOBJECT_PROPERTY(Expr *base, const QString *id, QQmlPropertyData *property);
+    Expr *MEMBER(Expr *base, const QString *name, QQmlPropertyData *property = 0, uchar kind = Member::UnspecifiedMember, int attachedPropertiesIdOrEnumValue = 0);
 
     Stmt *EXP(Expr *expr);
 
@@ -927,6 +968,8 @@ public:
         newName->id = n->id;
         newName->builtin = n->builtin;
         newName->global = n->global;
+        newName->qmlSingleton = n->qmlSingleton;
+        newName->freeOfSideEffects = n->freeOfSideEffects;
         newName->line = n->line;
         newName->column = n->column;
         return newName;
@@ -937,6 +980,7 @@ public:
         Temp *newTemp = f->New<Temp>();
         newTemp->init(t->kind, t->index, t->scope);
         newTemp->type = t->type;
+        newTemp->memberResolver = t->memberResolver;
         return newTemp;
     }
 

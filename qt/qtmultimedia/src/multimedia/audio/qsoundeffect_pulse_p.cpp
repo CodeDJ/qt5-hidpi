@@ -183,15 +183,16 @@ private Q_SLOTS:
         lock();
         m_context = pa_context_new(m_mainLoopApi, QString(QLatin1String("QtPulseAudio:%1")).arg(::getpid()).toLatin1().constData());
 
-        pa_context_set_state_callback(m_context, context_state_callback, this);
-
         if (m_context == 0) {
             qWarning("PulseAudioService: Unable to create new pulseaudio context");
             pa_threaded_mainloop_unlock(m_mainLoop);
             pa_threaded_mainloop_free(m_mainLoop);
             m_mainLoop = 0;
+            onContextFailed();
             return;
         }
+
+        pa_context_set_state_callback(m_context, context_state_callback, this);
 
         if (pa_context_connect(m_context, 0, (pa_context_flags_t)0, 0) < 0) {
             qWarning("PulseAudioService: pa_context_connect() failed");
@@ -382,7 +383,7 @@ QSoundEffectPrivate::QSoundEffectPrivate(QObject* parent):
     m_muted(false),
     m_playQueued(false),
     m_stopping(false),
-    m_volume(100),
+    m_volume(1.0),
     m_loopCount(1),
     m_runningCount(0),
     m_reloadCategory(false),
@@ -517,12 +518,12 @@ void QSoundEffectPrivate::setLoopCount(int loopCount)
     m_loopCount = loopCount;
 }
 
-int QSoundEffectPrivate::volume() const
+qreal QSoundEffectPrivate::volume() const
 {
     return m_volume;
 }
 
-void QSoundEffectPrivate::setVolume(int volume)
+void QSoundEffectPrivate::setVolume(qreal volume)
 {
     m_volume = volume;
     emit volumeChanged();
@@ -537,7 +538,7 @@ void QSoundEffectPrivate::updateVolume()
     pa_cvolume volume;
     volume.channels = m_pulseSpec.channels;
     if (pulseDaemon()->context())
-        pa_operation_unref(pa_context_set_sink_input_volume(pulseDaemon()->context(), m_sinkInputId, pulseDaemon()->calcVolume(&volume, m_volume), setvolume_callback, m_ref->getRef()));
+        pa_operation_unref(pa_context_set_sink_input_volume(pulseDaemon()->context(), m_sinkInputId, pulseDaemon()->calcVolume(&volume, qRound(m_volume * 100)), setvolume_callback, m_ref->getRef()));
     Q_ASSERT(pa_cvolume_valid(&volume));
 #ifdef QT_PA_DEBUG
     qDebug() << this << "updateVolume =" << pa_cvolume_max(&volume);

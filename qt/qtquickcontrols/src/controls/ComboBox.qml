@@ -119,6 +119,9 @@ Control {
     /*! \qmlproperty int ComboBox::currentIndex
         The index of the currently selected item in the ComboBox.
 
+        Setting currentIndex to \c -1 will reset the selection and clear the text
+        label. If \l editable is \c true, you may also need to manually clear \l editText.
+
         \sa model
     */
     property alias currentIndex: popup.__selectedIndex
@@ -268,6 +271,28 @@ Control {
     }
 
     /*! \internal */
+    function __selectPrevItem() {
+        input.blockUpdate = true
+        if (currentIndex > 0) {
+            currentIndex--;
+            input.text = popup.currentText;
+            activated(currentIndex);
+        }
+        input.blockUpdate = false;
+    }
+
+    /*! \internal */
+    function __selectNextItem() {
+        input.blockUpdate = true;
+        if (currentIndex < popupItems.count - 1) {
+            currentIndex++;
+            input.text = popup.currentText;
+            activated(currentIndex);
+        }
+        input.blockUpdate = false;
+    }
+
+    /*! \internal */
     property var __popup: popup
 
     style: Qt.createComponent(Settings.style + "/ComboBoxStyle.qml", comboBox)
@@ -284,6 +309,13 @@ Control {
             if (comboBox.activeFocusOnPress)
                 forceActiveFocus()
             popup.show()
+        }
+        onWheel: {
+            if (wheel.angleDelta.y > 0) {
+                __selectPrevItem();
+            } else if (wheel.angleDelta.y < 0){
+                __selectNextItem();
+            }
         }
     }
 
@@ -313,7 +345,6 @@ Control {
         enabled: editable
         focus: true
         clip: contentWidth > width
-        text: currentText
 
         anchors.fill: parent
         anchors.leftMargin: 8
@@ -323,27 +354,26 @@ Control {
 
         renderType: Text.NativeRendering
         selectByMouse: true
-        selectionColor: syspal.highlight
-        selectedTextColor: syspal.highlightedText
+        color: __style.__syspal.text
+        selectionColor: __style.__syspal.highlight
+        selectedTextColor: __style.__syspal.highlightedText
         onAccepted: {
-            var idx = input.find(editText)
+            var idx = input.find(editText, Qt.MatchFixedString)
             if (idx > -1) {
-                var string = textAt(idx);
-                if (string.length === editText.length) {
-                    currentIndex = idx;
-                    editText = string;
-                }
+                editTextMatches = true;
+                currentIndex = idx;
+                editText = textAt(idx);
             } else {
+                editTextMatches = false;
                 currentIndex = -1;
                 popup.currentText = editText;
             }
             comboBox.accepted();
         }
 
-        SystemPalette { id: syspal }
-
         property bool blockUpdate: false
         property string prevText
+        property bool editTextMatches: true
 
         function find (text, searchType) {
             for (var i = 0 ; i < popupItems.count ; ++i) {
@@ -353,6 +383,10 @@ Control {
                         return i;
                 } else if (searchType === Qt.CaseSensitive) {
                     if (currentString.indexOf(text) === 0)
+                        return i;
+                } else if (searchType === Qt.MatchFixedString) {
+                    if (currentString.toLowerCase().indexOf(text.toLowerCase()) === 0
+                            && currentString.length === text.length)
                         return i;
                 } else if (currentString.toLowerCase().indexOf(text.toLowerCase()) === 0) {
                     return i
@@ -396,7 +430,7 @@ Control {
         Keys.onPressed: allowComplete = (event.key !== Qt.Key_Backspace && event.key !== Qt.Key_Delete);
 
         onTextChanged: {
-            if (editable && !blockUpdate && allowComplete) {
+            if (editable && !blockUpdate && allowComplete && text.length > 0) {
                 var completed = input.tryComplete(text)
                 if (completed.length > text.length) {
                     var oldtext = input.text;
@@ -406,6 +440,13 @@ Control {
             }
             prevText = text
         }
+    }
+
+    Binding {
+        target: input
+        property: "text"
+        value: popup.currentText
+        when: input.editTextMatches
     }
 
     onTextRoleChanged: popup.resolveTextValue(textRole)
@@ -420,7 +461,12 @@ Control {
         onSelectedTextChanged: if (selectedText) popup.currentText = selectedText
 
         property string selectedText
-        on__SelectedIndexChanged: updateSelectedText()
+        on__SelectedIndexChanged: {
+            if (__selectedIndex === -1)
+                popup.currentText = ""
+            else
+                updateSelectedText()
+        }
         property string textRole: ""
 
         property bool ready: false
@@ -432,7 +478,7 @@ Control {
 
         property ExclusiveGroup eg: ExclusiveGroup { id: eg }
 
-        property bool __modelIsArray: popupItems.model ? popupItems.model.constructor === Array : false
+        property bool modelIsArray: false
 
         Instantiator {
             id: popupItems
@@ -440,6 +486,7 @@ Control {
 
             property bool updatingModel: false
             onModelChanged: {
+                popup.modelIsArray = !!model ? model.constructor === Array : false
                 if (active) {
                     if (updatingModel && popup.__selectedIndex === 0) {
                         // We still want to update the currentText
@@ -449,12 +496,13 @@ Control {
                         popup.__selectedIndex = 0
                     }
                 }
+                popup.resolveTextValue(comboBox.textRole)
             }
 
             MenuItem {
                 text: popup.textRole === '' ?
                         modelData :
-                          ((popup.__modelIsArray ? modelData[popup.textRole] : model[popup.textRole]) || '')
+                          ((popup.modelIsArray ? modelData[popup.textRole] : model[popup.textRole]) || '')
                 onTriggered: {
                     if (index !== currentIndex)
                         activated(index)
@@ -479,7 +527,7 @@ Control {
             }
 
             var get = model['get'];
-            if (!get && popup.__modelIsArray) {
+            if (!get && popup.modelIsArray && !!model[0]) {
                 if (model[0].constructor !== String && model[0].constructor !== Number)
                     get = function(i) { return model[i]; }
             }
@@ -528,8 +576,10 @@ Control {
 
         function updateSelectedText() {
             var selectedItem;
-            if (__selectedIndex !== -1 && (selectedItem = items[__selectedIndex]))
+            if (__selectedIndex !== -1 && (selectedItem = items[__selectedIndex])) {
+                input.editTextMatches = true
                 selectedText = selectedItem.text
+            }
         }
     }
 
@@ -540,23 +590,6 @@ Control {
             popup.show()
     }
 
-    Keys.onUpPressed: {
-        input.blockUpdate = true
-        if (currentIndex > 0) {
-            currentIndex--;
-            input.text = popup.currentText;
-            activated(currentIndex);
-        }
-        input.blockUpdate = false;
-    }
-
-    Keys.onDownPressed: {
-        input.blockUpdate = true;
-        if (currentIndex < popupItems.count - 1) {
-            currentIndex++;
-            input.text = popup.currentText;
-            activated(currentIndex);
-        }
-        input.blockUpdate = false;
-    }
+    Keys.onUpPressed: __selectPrevItem()
+    Keys.onDownPressed: __selectNextItem()
 }

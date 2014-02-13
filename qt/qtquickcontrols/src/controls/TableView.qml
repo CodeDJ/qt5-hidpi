@@ -696,7 +696,7 @@ ScrollView {
         model: root.model
 
         function keySelect(shiftPressed, row) {
-            if (row < 0 || row === rowCount - 1)
+            if (row < 0 || row > rowCount - 1)
                 return
             if (shiftPressed && (selectionMode >= SelectionMode.ExtendedSelection)) {
                 selection.__ranges = new Array()
@@ -830,7 +830,6 @@ ScrollView {
                         }
                     }
                 }
-                onWidthChanged: listView.contentWidth = width
             }
         }
 
@@ -991,6 +990,7 @@ ScrollView {
                         }
                     }
                 }
+                onWidthChanged: listView.contentWidth = width
             }
             Loader {
                 id: loader

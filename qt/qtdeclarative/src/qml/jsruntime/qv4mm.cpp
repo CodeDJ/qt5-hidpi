@@ -155,6 +155,19 @@ struct MemoryManager::Data
 
     QVector<Chunk> heapChunks;
 
+
+    struct LargeItem {
+        LargeItem *next;
+        void *data;
+
+        Managed *managed() {
+            return reinterpret_cast<Managed *>(&data);
+        }
+    };
+
+    LargeItem *largeItems;
+
+
     // statistics:
 #ifdef DETAILED_MM_STATS
     QVector<unsigned> allocSizeCounters;
@@ -167,6 +180,7 @@ struct MemoryManager::Data
         , stackTop(0)
         , totalItems(0)
         , totalAlloc(0)
+        , largeItems(0)
     {
         memset(smallItems, 0, sizeof(smallItems));
         memset(nChunks, 0, sizeof(nChunks));
@@ -200,7 +214,6 @@ bool operator<(const MemoryManager::Data::Chunk &a, const MemoryManager::Data::C
 
 MemoryManager::MemoryManager()
     : m_d(new Data(true))
-    , m_contextList(0)
     , m_persistentValues(0)
     , m_weakValues(0)
 {
@@ -258,8 +271,14 @@ Managed *MemoryManager::alloc(std::size_t size)
 
     size_t pos = size >> 4;
 
-    // fits into a small bucket
-    Q_ASSERT(size < MemoryManager::Data::MaxItemSize);
+    // doesn't fit into a small bucket
+    if (size >= MemoryManager::Data::MaxItemSize) {
+        // we use malloc for this
+        MemoryManager::Data::LargeItem *item = static_cast<MemoryManager::Data::LargeItem *>(malloc(size + sizeof(MemoryManager::Data::LargeItem)));
+        item->next = m_d->largeItems;
+        m_d->largeItems = item;
+        return item->managed();
+    }
 
     Managed *m = m_d->smallItems[pos];
     if (m)
@@ -279,11 +298,11 @@ Managed *MemoryManager::alloc(std::size_t size)
         uint shift = ++m_d->nChunks[pos];
         if (shift > 10)
             shift = 10;
-        std::size_t allocSize = CHUNK_SIZE*(1 << shift);
+        std::size_t allocSize = CHUNK_SIZE*(size_t(1) << shift);
         allocSize = roundUpToMultipleOf(WTF::pageSize(), allocSize);
         Data::Chunk allocation;
         allocation.memory = PageAllocation::allocate(allocSize, OSAllocator::JSGCHeapPages);
-        allocation.chunkSize = size;
+        allocation.chunkSize = int(size);
         m_d->heapChunks.append(allocation);
         std::sort(m_d->heapChunks.begin(), m_d->heapChunks.end());
         char *chunk = (char *)allocation.memory.base();
@@ -301,8 +320,9 @@ Managed *MemoryManager::alloc(std::size_t size)
         }
         *last = 0;
         m = m_d->smallItems[pos];
-        m_d->availableItems[pos] += allocation.memory.size()/size - 1;
-        m_d->totalItems += allocation.memory.size()/size - 1;
+        const size_t increase = allocation.memory.size()/size - 1;
+        m_d->availableItems[pos] += uint(increase);
+        m_d->totalItems += int(increase);
 #ifdef V4_USE_VALGRIND
         VALGRIND_MAKE_MEM_NOACCESS(allocation.memory, allocation.chunkSize);
 #endif
@@ -404,8 +424,8 @@ void MemoryManager::mark()
     // now that we marked all roots, start marking recursively and popping from the mark stack
     while (m_d->engine->jsStackTop > markBase) {
         Managed *m = m_d->engine->popForGC();
-        Q_ASSERT (m->vtbl->markObjects);
-        m->vtbl->markObjects(m, m_d->engine);
+        Q_ASSERT (m->internalClass->vtable->markObjects);
+        m->internalClass->vtable->markObjects(m, m_d->engine);
     }
 }
 
@@ -447,18 +467,21 @@ void MemoryManager::sweep(bool lastSweep)
     for (QVector<Data::Chunk>::iterator i = m_d->heapChunks.begin(), ei = m_d->heapChunks.end(); i != ei; ++i)
         sweep(reinterpret_cast<char*>(i->memory.base()), i->memory.size(), i->chunkSize, &deletable);
 
-    ExecutionContext *ctx = m_contextList;
-    ExecutionContext **n = &m_contextList;
-    while (ctx) {
-        ExecutionContext *next = ctx->next;
-        if (!ctx->marked) {
-            free(ctx);
-            *n = next;
-        } else {
-            ctx->marked = false;
-            n = &ctx->next;
+    Data::LargeItem *i = m_d->largeItems;
+    Data::LargeItem **last = &m_d->largeItems;
+    while (i) {
+        Managed *m = i->managed();
+        Q_ASSERT(m->inUse);
+        if (m->markBit) {
+            m->markBit = 0;
+            last = &i->next;
+            i = i->next;
+            continue;
         }
-        ctx = next;
+
+        *last = i->next;
+        free(i);
+        i = *last;
     }
 
     deletable = *firstDeletable;
@@ -493,9 +516,9 @@ void MemoryManager::sweep(char *chunkStart, std::size_t chunkSize, size_t size, 
 #ifdef V4_USE_VALGRIND
                 VALGRIND_ENABLE_ERROR_REPORTING;
 #endif
-                if (m->vtbl->collectDeletables)
-                    m->vtbl->collectDeletables(m, deletable);
-                m->vtbl->destroy(m);
+                if (m->internalClass->vtable->collectDeletables)
+                    m->internalClass->vtable->collectDeletables(m, deletable);
+                m->internalClass->vtable->destroy(m);
 
                 m->setNextFree(*f);
 #ifdef V4_USE_VALGRIND

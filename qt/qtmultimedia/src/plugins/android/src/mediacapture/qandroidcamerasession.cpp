@@ -44,11 +44,13 @@
 #include "jcamera.h"
 #include "jmultimediautils.h"
 #include "qandroidvideooutput.h"
+#include "qandroidmediavideoprobecontrol.h"
 #include "qandroidmultimediautils.h"
 #include <QtConcurrent/qtconcurrentrun.h>
 #include <qfile.h>
 #include <qguiapplication.h>
 #include <qdebug.h>
+#include <qvideoframe.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -92,6 +94,7 @@ QAndroidCameraSession::QAndroidCameraSession(QObject *parent)
     , m_selectedCamera(0)
     , m_camera(0)
     , m_nativeOrientation(0)
+    , m_previewOrientation(0)
     , m_videoOutput(0)
     , m_captureMode(QCamera::CaptureViewfinder)
     , m_state(QCamera::UnloadedState)
@@ -181,12 +184,29 @@ bool QAndroidCameraSession::open()
 
     if (m_camera) {
         connect(m_camera, SIGNAL(pictureExposed()), this, SLOT(onCameraPictureExposed()));
+        connect(m_camera, SIGNAL(previewFetched(QByteArray)), this, SLOT(onCameraPreviewFetched(QByteArray)));
+        connect(m_camera, SIGNAL(frameFetched(QByteArray)),
+                this, SLOT(onCameraFrameFetched(QByteArray)),
+                Qt::DirectConnection);
         connect(m_camera, SIGNAL(pictureCaptured(QByteArray)), this, SLOT(onCameraPictureCaptured(QByteArray)));
-        connect(m_camera, SIGNAL(previewFrameAvailable(QByteArray)), this, SLOT(onCameraPreviewFrameAvailable(QByteArray)));
+        connect(m_camera, SIGNAL(previewStarted()), this, SLOT(onCameraPreviewStarted()));
+        connect(m_camera, SIGNAL(previewStopped()), this, SLOT(onCameraPreviewStopped()));
+
         m_nativeOrientation = m_camera->getNativeOrientation();
+
+        // Preview orientation will always match the device natural orientation
+        if (m_camera->getFacing() == JCamera::CameraFacingFront)
+            m_previewOrientation = 360 - m_nativeOrientation;
+        else
+            m_previewOrientation = m_nativeOrientation;
+
         m_status = QCamera::LoadedStatus;
+
         if (m_camera->getPreviewFormat() != JCamera::NV21)
             m_camera->setPreviewFormat(JCamera::NV21);
+
+        m_camera->fetchEachFrame(m_videoProbes.count());
+
         emit opened();
     } else {
         m_status = QCamera::UnavailableStatus;
@@ -257,8 +277,16 @@ void QAndroidCameraSession::adjustViewfinderSize(const QSize &captureSize, bool 
     }
 
     if (m_camera->previewSize() != viewfinderResolution) {
-        if (m_videoOutput)
-            m_videoOutput->setVideoSize(viewfinderResolution);
+        if (m_videoOutput) {
+            QSize size = viewfinderResolution;
+
+            // If the preview orientation is not the defaut one (0 or 180 degrees),
+            // we have to invert the output aspect ratio.
+            if (m_previewOrientation % 180)
+                size.transpose();
+
+            m_videoOutput->setVideoSize(size);
+        }
 
         // if preview is started, we have to stop it first before changing its size
         if (m_previewStarted && restartPreview)
@@ -282,6 +310,7 @@ void QAndroidCameraSession::startPreview()
 
     applyImageSettings();
     adjustViewfinderSize(m_imageSettings.resolution());
+    m_camera->setDisplayOrientation(m_previewOrientation);
 
     if (m_videoOutput && m_videoOutput->isReady())
         onVideoOutputReady(true);
@@ -290,11 +319,6 @@ void QAndroidCameraSession::startPreview()
 
     m_camera->startPreview();
     m_previewStarted = true;
-
-    m_status = QCamera::ActiveStatus;
-    emit statusChanged(m_status);
-
-    setReadyForCapture(true);
 }
 
 void QAndroidCameraSession::stopPreview()
@@ -312,11 +336,6 @@ void QAndroidCameraSession::stopPreview()
     if (m_videoOutput)
         m_videoOutput->stop();
     m_previewStarted = false;
-
-    m_status = QCamera::LoadedStatus;
-    emit statusChanged(m_status);
-
-    setReadyForCapture(false);
 }
 
 void QAndroidCameraSession::setImageSettings(const QImageEncoderSettings &settings)
@@ -350,6 +369,25 @@ int QAndroidCameraSession::currentCameraRotation() const
         rotation = (m_nativeOrientation + deviceOrientation) % 360;
 
     return rotation;
+}
+
+void QAndroidCameraSession::addProbe(QAndroidMediaVideoProbeControl *probe)
+{
+    m_videoProbesMutex.lock();
+    if (probe)
+        m_videoProbes << probe;
+    if (m_camera)
+        m_camera->fetchEachFrame(m_videoProbes.count());
+    m_videoProbesMutex.unlock();
+}
+
+void QAndroidCameraSession::removeProbe(QAndroidMediaVideoProbeControl *probe)
+{
+    m_videoProbesMutex.lock();
+    m_videoProbes.remove(probe);
+    if (m_camera)
+        m_camera->fetchEachFrame(m_videoProbes.count());
+    m_videoProbesMutex.unlock();
 }
 
 void QAndroidCameraSession::applyImageSettings()
@@ -464,7 +502,6 @@ int QAndroidCameraSession::capture(const QString &fileName)
         // adjust picture rotation depending on the device orientation
         m_camera->setRotation(currentCameraRotation());
 
-        m_camera->requestPreviewFrame();
         m_camera->takePicture();
     } else {
         //: Drive mode is the camera's shutter mode, for example single shot, continuos exposure, etc.
@@ -489,6 +526,30 @@ void QAndroidCameraSession::onCameraPictureExposed()
         return;
 
     emit imageExposed(m_currentImageCaptureId);
+    m_camera->fetchLastPreviewFrame();
+}
+
+void QAndroidCameraSession::onCameraPreviewFetched(const QByteArray &preview)
+{
+    if (preview.size()) {
+        QtConcurrent::run(this, &QAndroidCameraSession::processPreviewImage,
+                          m_currentImageCaptureId,
+                          preview,
+                          m_camera->getRotation());
+    }
+}
+
+void QAndroidCameraSession::onCameraFrameFetched(const QByteArray &frame)
+{
+    m_videoProbesMutex.lock();
+    if (frame.size() && m_videoProbes.count()) {
+        QVideoFrame videoFrame(new DataVideoBuffer(frame),
+                               m_camera->previewSize(),
+                               QVideoFrame::Format_NV21);
+        foreach (QAndroidMediaVideoProbeControl *probe, m_videoProbes)
+            probe->newFrameProbed(videoFrame);
+    }
+    m_videoProbesMutex.unlock();
 }
 
 void QAndroidCameraSession::onCameraPictureCaptured(const QByteArray &data)
@@ -507,8 +568,26 @@ void QAndroidCameraSession::onCameraPictureCaptured(const QByteArray &data)
 
     // Preview needs to be restarted after taking a picture
     m_camera->startPreview();
+}
+
+void QAndroidCameraSession::onCameraPreviewStarted()
+{
+    if (m_status == QCamera::StartingStatus) {
+        m_status = QCamera::ActiveStatus;
+        emit statusChanged(m_status);
+    }
 
     setReadyForCapture(true);
+}
+
+void QAndroidCameraSession::onCameraPreviewStopped()
+{
+    if (m_status == QCamera::StoppingStatus) {
+        m_status = QCamera::LoadedStatus;
+        emit statusChanged(m_status);
+    }
+
+    setReadyForCapture(false);
 }
 
 void QAndroidCameraSession::processCapturedImage(int id,
@@ -551,32 +630,33 @@ void QAndroidCameraSession::processCapturedImage(int id,
     }
 }
 
-void QAndroidCameraSession::onCameraPreviewFrameAvailable(const QByteArray &data)
+void QAndroidCameraSession::processPreviewImage(int id, const QByteArray &data, int rotation)
 {
-    if (m_captureCanceled || m_readyForCapture)
-        return;
-
-    QtConcurrent::run(this, &QAndroidCameraSession::processPreviewImage,
-                      m_currentImageCaptureId,
-                      data);
+    emit imageCaptured(id, prepareImageFromPreviewData(data, rotation));
 }
 
-void QAndroidCameraSession::processPreviewImage(int id, const QByteArray &data)
+QImage QAndroidCameraSession::prepareImageFromPreviewData(const QByteArray &data, int rotation)
 {
     QSize frameSize = m_camera->previewSize();
-    QImage preview(frameSize, QImage::Format_ARGB32);
+    QImage result(frameSize, QImage::Format_ARGB32);
     qt_convert_NV21_to_ARGB32((const uchar *)data.constData(),
-                              (quint32 *)preview.bits(),
+                              (quint32 *)result.bits(),
                               frameSize.width(),
                               frameSize.height());
+
+    QTransform transform;
 
     // Preview display of front-facing cameras is flipped horizontally, but the frame data
     // we get here is not. Flip it ourselves if the camera is front-facing to match what the user
     // sees on the viewfinder.
     if (m_camera->getFacing() == JCamera::CameraFacingFront)
-        preview = preview.transformed(QTransform().scale(-1, 1));
+        transform.scale(-1, 1);
 
-    emit imageCaptured(id, preview);
+    transform.rotate(rotation);
+
+    result = result.transformed(transform);
+
+    return result;
 }
 
 void QAndroidCameraSession::onVideoOutputReady(bool ready)

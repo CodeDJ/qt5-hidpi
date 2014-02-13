@@ -397,6 +397,7 @@ bool QSGRenderThread::event(QEvent *e)
     case WM_TryRelease: {
         QSG_RT_DEBUG("WM_TryRelease");
         mutex.lock();
+        wm->m_locked = true;
         WMTryReleaseEvent *wme = static_cast<WMTryReleaseEvent *>(e);
         if (!window || wme->inDestructor) {
             QSG_RT_DEBUG(" - setting exit flag and invalidating GL");
@@ -408,6 +409,7 @@ bool QSGRenderThread::event(QEvent *e)
             QSG_RT_DEBUG(" - not releasing anything because we have active windows...");
         }
         waitCondition.wakeOne();
+        wm->m_locked = false;
         mutex.unlock();
         return true;
     }
@@ -690,7 +692,7 @@ QSGThreadedRenderLoop::QSGThreadedRenderLoop()
     : sg(QSGContext::createDefaultContext())
     , m_animation_timer(0)
 {
-#if defined(QSG_RENDER_LOOP_DEBUG_BASIC) || defined (QSG_RENDER_LOOP_DEBUG_FULL)
+#if defined(QSG_RENDER_LOOP_DEBUG)
     qsgrl_timer.start();
 #endif
 
@@ -978,6 +980,9 @@ void QSGThreadedRenderLoop::maybeUpdate(QQuickWindow *window)
  */
 void QSGThreadedRenderLoop::maybeUpdate(Window *w)
 {
+    if (!QCoreApplication::instance())
+        return;
+
     Q_ASSERT_X(QThread::currentThread() == QCoreApplication::instance()->thread() || m_locked,
                "QQuickItem::update()",
                "Function can only be called from GUI thread or during QQuickItem::updatePaintNode()");
@@ -1131,7 +1136,8 @@ void QSGThreadedRenderLoop::polishAndSync(Window *w)
 
 #ifndef QSG_NO_RENDER_TIMING
     if (qsg_render_timing)
-        qDebug(" - on GUI: polish=%d, lock=%d, block/sync=%d -- animations=%d",
+        qDebug(" - Gui Thread: window=%p, polish=%d, lock=%d, block/sync=%d -- animations=%d",
+               w->window,
                int(polishTime/1000000),
                int((waitTime - polishTime)/1000000),
                int((syncTime - waitTime)/1000000),

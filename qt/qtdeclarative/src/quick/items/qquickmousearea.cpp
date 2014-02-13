@@ -823,6 +823,12 @@ void QQuickMouseArea::ungrabMouse()
         d->pressed = 0;
         d->stealMouse = false;
         setKeepMouseGrab(false);
+
+#ifndef QT_NO_DRAGANDDROP
+        if (d->drag)
+            d->drag->setActive(false);
+#endif
+
         emit canceled();
         emit pressedChanged();
         emit pressedButtonsChanged();
@@ -1178,6 +1184,7 @@ void QQuickMouseArea::setCursorShape(Qt::CursorShape shape)
 #endif
 
 /*!
+    \qmlpropertygroup QtQuick::MouseArea::drag
     \qmlproperty Item QtQuick::MouseArea::drag.target
     \qmlproperty bool QtQuick::MouseArea::drag.active
     \qmlproperty enumeration QtQuick::MouseArea::drag.axis

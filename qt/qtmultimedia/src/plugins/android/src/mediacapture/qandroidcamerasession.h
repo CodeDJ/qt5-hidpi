@@ -45,12 +45,15 @@
 #include <qcamera.h>
 #include <qmediaencodersettings.h>
 #include <QCameraImageCapture>
+#include <QSet>
+#include <QMutex>
 #include "qandroidmediastoragelocation.h"
 
 QT_BEGIN_NAMESPACE
 
 class JCamera;
 class QAndroidVideoOutput;
+class QAndroidMediaVideoProbeControl;
 
 class QAndroidCameraSession : public QObject
 {
@@ -90,6 +93,9 @@ public:
 
     int currentCameraRotation() const;
 
+    void addProbe(QAndroidMediaVideoProbeControl *probe);
+    void removeProbe(QAndroidMediaVideoProbeControl *probe);
+
 Q_SIGNALS:
     void statusChanged(QCamera::Status status);
     void stateChanged(QCamera::State);
@@ -113,8 +119,11 @@ private Q_SLOTS:
     void onApplicationStateChanged(Qt::ApplicationState state);
 
     void onCameraPictureExposed();
+    void onCameraPreviewFetched(const QByteArray &preview);
+    void onCameraFrameFetched(const QByteArray &frame);
     void onCameraPictureCaptured(const QByteArray &data);
-    void onCameraPreviewFrameAvailable(const QByteArray &data);
+    void onCameraPreviewStarted();
+    void onCameraPreviewStopped();
 
 private:
     bool open();
@@ -124,7 +133,8 @@ private:
     void stopPreview();
 
     void applyImageSettings();
-    void processPreviewImage(int id, const QByteArray &data);
+    void processPreviewImage(int id, const QByteArray &data, int rotation);
+    QImage prepareImageFromPreviewData(const QByteArray &data, int rotation);
     void processCapturedImage(int id,
                               const QByteArray &data,
                               const QSize &resolution,
@@ -134,6 +144,7 @@ private:
     int m_selectedCamera;
     JCamera *m_camera;
     int m_nativeOrientation;
+    int m_previewOrientation;
     QAndroidVideoOutput *m_videoOutput;
 
     QCamera::CaptureModes m_captureMode;
@@ -153,6 +164,9 @@ private:
     QString m_currentImageCaptureFileName;
 
     QAndroidMediaStorageLocation m_mediaStorageLocation;
+
+    QSet<QAndroidMediaVideoProbeControl *> m_videoProbes;
+    QMutex m_videoProbesMutex;
 };
 
 QT_END_NAMESPACE

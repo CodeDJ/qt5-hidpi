@@ -111,9 +111,6 @@ public:
     qint64 systemInputQueueSize () const;
     qint64 systemOutputQueueSize () const;
 
-    qint64 bytesAvailable() const;
-
-    qint64 readFromBuffer(char *data, qint64 maxSize);
     qint64 writeToBuffer(const char *data, qint64 maxSize);
 
     bool waitForReadyRead(int msecs);
@@ -127,7 +124,7 @@ public:
     bool setDataErrorPolicy(QSerialPort::DataErrorPolicy policy);
 
     bool readNotification();
-    bool writeNotification(int maxSize = INT_MAX);
+    bool writeNotification();
     void exceptionNotification();
 
     static QString portNameToSystemLocation(const QString &port);

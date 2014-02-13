@@ -851,7 +851,7 @@ bool QQuickKeysAttached::isConnected(const char *signalName)
     \list 1
     \li Items specified in \c forwardTo
     \li specific key handlers, e.g. onReturnPressed
-    \li onKeyPress, onKeyRelease handlers
+    \li onPressed, onReleased handlers
     \li Item specific key handling, e.g. TextInput key handling
     \li parent item
     \endlist
@@ -862,7 +862,7 @@ bool QQuickKeysAttached::isConnected(const char *signalName)
     \li Item specific key handling, e.g. TextInput key handling
     \li Items specified in \c forwardTo
     \li specific key handlers, e.g. onReturnPressed
-    \li onKeyPress, onKeyRelease handlers
+    \li onPressed, onReleased handlers
     \li parent item
     \endlist
 
@@ -1819,7 +1819,7 @@ void QQuickItemPrivate::updateSubFocusItem(QQuickItem *scope, bool focus)
     \value Bottom The center point of the bottom of the item.
     \value BottomRight The bottom-right corner of the item.
 
-    \sa transformOrigin
+    \sa transformOrigin(), setTransformOrigin()
 */
 
 /*!
@@ -2067,8 +2067,12 @@ bool QQuickItemPrivate::canAcceptTabFocus(QQuickItem *item)
         if (role == QAccessible::EditableText
                 || role == QAccessible::Table
                 || role == QAccessible::List
-                || role == QAccessible::SpinBox)
+                || role == QAccessible::SpinBox) {
             result = true;
+        } else if (role == QAccessible::ComboBox) {
+            QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(item);
+            return iface->state().editable;
+        }
     }
 #endif
 
@@ -2425,7 +2429,7 @@ void QQuickItem::stackAfter(const QQuickItem *sibling)
   Returns the window in which this item is rendered.
 
   The item does not have a window until it has been assigned into a scene. The
-  \l windowChanged signal provides a notification both when the item is entered
+  \l windowChanged() signal provides a notification both when the item is entered
   into a scene and when it is removed from a scene.
   */
 QQuickWindow *QQuickItem::window() const
@@ -3050,6 +3054,7 @@ void QQuickItemPrivate::_q_resourceObjectDeleted(QObject *object)
 }
 
 /*!
+  \qmlpropertygroup QtQuick::Item::anchors
   \qmlproperty AnchorLine QtQuick::Item::anchors.top
   \qmlproperty AnchorLine QtQuick::Item::anchors.bottom
   \qmlproperty AnchorLine QtQuick::Item::anchors.left
@@ -3173,6 +3178,7 @@ QQmlListProperty<QObject> QQuickItemPrivate::data()
 }
 
 /*!
+    \qmlpropertygroup QtQuick::Item::childrenRect
     \qmlproperty real QtQuick::Item::childrenRect.x
     \qmlproperty real QtQuick::Item::childrenRect.y
     \qmlproperty real QtQuick::Item::childrenRect.width
@@ -4573,7 +4579,7 @@ void QQuickItemPrivate::deliverDragEvent(QEvent *e)
     QQuickItem::itemChange(change, value);
     \endcode
     typically at the end of your implementation, to ensure the
-    \l windowChanged signal will be emitted.
+    \l windowChanged() signal will be emitted.
   */
 void QQuickItem::itemChange(ItemChange change, const ItemChangeData &value)
 {
@@ -6629,15 +6635,7 @@ void QQuickItem::grabMouse()
     if (!d->window)
         return;
     QQuickWindowPrivate *windowPriv = QQuickWindowPrivate::get(d->window);
-    if (windowPriv->mouseGrabberItem == this)
-        return;
-
-    QQuickItem *oldGrabber = windowPriv->mouseGrabberItem;
-    windowPriv->mouseGrabberItem = this;
-    if (oldGrabber) {
-        QEvent ev(QEvent::UngrabMouse);
-        d->window->sendEvent(oldGrabber, &ev);
-    }
+    windowPriv->setMouseGrabber(this);
 }
 
 /*!

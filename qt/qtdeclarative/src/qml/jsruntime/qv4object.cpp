@@ -74,18 +74,17 @@ Object::Object(ExecutionEngine *engine)
     , memberDataAlloc(InlinePropertySize), memberData(inlineProperties)
     , arrayOffset(0), arrayDataLen(0), arrayAlloc(0), arrayAttributes(0), arrayData(0), sparseArray(0)
 {
-    vtbl = &static_vtbl;
     type = Type_Object;
     flags = SimpleArray;
     memset(memberData, 0, sizeof(Property)*memberDataAlloc);
 }
 
-Object::Object(InternalClass *internalClass)
-    : Managed(internalClass)
+Object::Object(InternalClass *ic)
+    : Managed(ic)
     , memberDataAlloc(InlinePropertySize), memberData(inlineProperties)
     , arrayOffset(0), arrayDataLen(0), arrayAlloc(0), arrayAttributes(0), arrayData(0), sparseArray(0)
 {
-    vtbl = &static_vtbl;
+    Q_ASSERT(internalClass->vtable && internalClass->vtable != &Managed::static_vtbl);
     type = Type_Object;
     flags = SimpleArray;
 
@@ -169,8 +168,8 @@ void Object::putValue(Property *pd, PropertyAttributes attrs, const ValueRef val
     return;
 
   reject:
-    if (engine()->current->strictMode)
-        engine()->current->throwTypeError();
+    if (engine()->currentContext()->strictMode)
+        engine()->currentContext()->throwTypeError();
 }
 
 void Object::defineDefaultProperty(const StringRef name, ValueRef value)
@@ -721,7 +720,7 @@ void Object::internalPut(const StringRef name, const ValueRef value)
             bool ok;
             uint l = value->asArrayLength(&ok);
             if (!ok) {
-                engine()->current->throwRangeError(value);
+                engine()->currentContext()->throwRangeError(value);
                 return;
             }
             ok = setArrayLength(l);
@@ -769,11 +768,11 @@ void Object::internalPut(const StringRef name, const ValueRef value)
     }
 
   reject:
-    if (engine()->current->strictMode) {
+    if (engine()->currentContext()->strictMode) {
         QString message = QStringLiteral("Cannot assign to read-only property \"");
         message += name->toQString();
         message += QLatin1Char('\"');
-        engine()->current->throwTypeError(message);
+        engine()->currentContext()->throwTypeError(message);
     }
 }
 
@@ -844,8 +843,8 @@ void Object::internalPutIndexed(uint index, const ValueRef value)
     return;
 
   reject:
-    if (engine()->current->strictMode)
-        engine()->current->throwTypeError();
+    if (engine()->currentContext()->strictMode)
+        engine()->currentContext()->throwTypeError();
 }
 
 // Section 8.12.7
@@ -867,8 +866,8 @@ bool Object::internalDeleteProperty(const StringRef name)
             memmove(memberData + memberIdx, memberData + memberIdx + 1, (internalClass->size - memberIdx)*sizeof(Property));
             return true;
         }
-        if (engine()->current->strictMode)
-            engine()->current->throwTypeError();
+        if (engine()->currentContext()->strictMode)
+            engine()->currentContext()->throwTypeError();
         return false;
     }
 
@@ -897,8 +896,8 @@ bool Object::internalDeleteIndexedProperty(uint index)
         return true;
     }
 
-    if (engine()->current->strictMode)
-        engine()->current->throwTypeError();
+    if (engine()->currentContext()->strictMode)
+        engine()->currentContext()->throwTypeError();
     return false;
 }
 
@@ -1133,7 +1132,7 @@ ReturnedValue Object::arrayIndexOf(const ValueRef v, uint fromIndex, uint endInd
     Scope scope(engine());
     ScopedValue value(scope);
 
-    if (!(flags & SimpleArray) || o->protoHasArray() || o->arrayAttributes) {
+    if (!(o->flags & SimpleArray) || o->protoHasArray()) {
         // lets be safe and slow
         for (uint i = fromIndex; i < endIndex; ++i) {
             bool exists;
@@ -1262,13 +1261,9 @@ void Object::arraySort(ExecutionContext *context, ObjectRef thisObject, const Va
 
     ArrayElementLessThan lessThan(context, thisObject, comparefn);
 
+    if (!len)
+        return;
     Property *begin = arrayData;
-    // We deliberately choose qSort over std::sort here, because with
-    // MSVC in debug builds, std::sort has an ASSERT() that verifies
-    // that the return values of lessThan are perfectly consistent
-    // and aborts otherwise. We do not want JavaScript to easily crash
-    // the entire application and therefore choose qSort, which doesn't
-    // have this property.
     std::sort(begin, begin + len, lessThan);
 }
 
