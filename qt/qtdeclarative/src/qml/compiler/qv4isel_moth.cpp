@@ -152,8 +152,9 @@ inline bool isBoolType(V4IR::Expr *e)
 
 } // anonymous namespace
 
-InstructionSelection::InstructionSelection(QV4::ExecutableAllocator *execAllocator, V4IR::Module *module, QV4::Compiler::JSUnitGenerator *jsGenerator)
+InstructionSelection::InstructionSelection(QQmlEnginePrivate *qmlEngine, QV4::ExecutableAllocator *execAllocator, V4IR::Module *module, QV4::Compiler::JSUnitGenerator *jsGenerator)
     : EvalInstructionSelection(execAllocator, module, jsGenerator)
+    , qmlEngine(qmlEngine)
     , _block(0)
     , _codeStart(0)
     , _codeNext(0)
@@ -191,7 +192,7 @@ void InstructionSelection::run(int functionIndex)
     qSwap(codeEnd, _codeEnd);
 
     V4IR::Optimizer opt(_function);
-    opt.run();
+    opt.run(qmlEngine);
     if (opt.isInSSA()) {
         opt.convertOutOfSSA();
         opt.showMeTheCode(_function);
@@ -351,6 +352,16 @@ void InstructionSelection::constructActivationProperty(V4IR::Name *func,
 
 void InstructionSelection::constructProperty(V4IR::Temp *base, const QString &name, V4IR::ExprList *args, V4IR::Temp *result)
 {
+    if (useFastLookups) {
+        Instruction::ConstructPropertyLookup call;
+        call.base = getParam(base);
+        call.index = registerGetterLookup(name);
+        prepareCallArgs(args, call.argc);
+        call.callData = callDataStart();
+        call.result = getResultParam(result);
+        addInstruction(call);
+        return;
+    }
     Instruction::CreateProperty create;
     create.base = getParam(base);
     create.name = registerString(name);
@@ -377,11 +388,10 @@ void InstructionSelection::loadThisObject(V4IR::Temp *temp)
     addInstruction(load);
 }
 
-void InstructionSelection::loadQmlIdObject(int id, V4IR::Temp *temp)
+void InstructionSelection::loadQmlIdArray(V4IR::Temp *temp)
 {
-    Instruction::LoadQmlIdObject load;
+    Instruction::LoadQmlIdArray load;
     load.result = getResultParam(temp);
-    load.id = id;
     addInstruction(load);
 }
 
@@ -403,6 +413,14 @@ void InstructionSelection::loadQmlScopeObject(V4IR::Temp *temp)
 {
     Instruction::LoadQmlScopeObject load;
     load.result = getResultParam(temp);
+    addInstruction(load);
+}
+
+void InstructionSelection::loadQmlSingleton(const QString &name, V4IR::Temp *temp)
+{
+    Instruction::LoadQmlSingleton load;
+    load.result = getResultParam(temp);
+    load.name = registerString(name);
     addInstruction(load);
 }
 
@@ -508,14 +526,22 @@ void InstructionSelection::setQObjectProperty(V4IR::Expr *source, V4IR::Expr *ta
     addInstruction(store);
 }
 
-void InstructionSelection::getQObjectProperty(V4IR::Expr *base, int propertyIndex, bool captureRequired, V4IR::Temp *target)
+void InstructionSelection::getQObjectProperty(V4IR::Expr *base, int propertyIndex, bool captureRequired, int attachedPropertiesId, V4IR::Temp *target)
 {
-    Instruction::LoadQObjectProperty load;
-    load.base = getParam(base);
-    load.propertyIndex = propertyIndex;
-    load.result = getResultParam(target);
-    load.captureRequired = captureRequired;
-    addInstruction(load);
+    if (attachedPropertiesId != 0) {
+        Instruction::LoadAttachedQObjectProperty load;
+        load.propertyIndex = propertyIndex;
+        load.result = getResultParam(target);
+        load.attachedPropertiesId = attachedPropertiesId;
+        addInstruction(load);
+    } else {
+        Instruction::LoadQObjectProperty load;
+        load.base = getParam(base);
+        load.propertyIndex = propertyIndex;
+        load.result = getResultParam(target);
+        load.captureRequired = captureRequired;
+        addInstruction(load);
+    }
 }
 
 void InstructionSelection::getElement(V4IR::Expr *base, V4IR::Expr *index, V4IR::Temp *target)

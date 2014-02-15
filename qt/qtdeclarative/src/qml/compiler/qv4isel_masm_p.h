@@ -466,23 +466,6 @@ public:
         V4IR::BasicBlock *block;
     };
 
-    void saveInstructionPointer(RegisterID freeScratchRegister) {
-        Address ipAddr(ContextRegister, qOffsetOf(QV4::ExecutionContext, jitInstructionPointer));
-        RegisterID sourceRegister = freeScratchRegister;
-
-#if CPU(X86_64) || CPU(X86)
-        callToRetrieveIP();
-        peek(sourceRegister);
-        pop();
-#elif CPU(ARM)
-        move(JSC::ARMRegisters::pc, sourceRegister);
-#else
-#error "Port me!"
-#endif
-
-        storePtr(sourceRegister, ipAddr);
-    }
-
     void callAbsolute(const char* functionName, FunctionPtr function) {
         CallToLink ctl;
         ctl.call = call();
@@ -1056,7 +1039,6 @@ public:
     static const BinaryOperationInfo &binaryOperation(V4IR::AluOp operation)
     { return binaryOperations[operation]; }
 
-
     Jump inline_add32(Address addr, RegisterID reg)
     {
 #if HAVE(ALU_OPS_WITH_MEM_OPERAND)
@@ -1397,8 +1379,6 @@ public:
 
     JSC::MacroAssemblerCodeRef link(int *codeSize);
 
-    void recordLineNumber(int lineNumber);
-
     const StackLayout stackLayout() const { return _stackLayout; }
     ConstantTable &constantTable() { return _constTable; }
 
@@ -1424,13 +1404,6 @@ private:
 
     QV4::ExecutableAllocator *_executableAllocator;
     InstructionSelection *_isel;
-
-    struct CodeLineNumerMapping
-    {
-        Assembler::Label location;
-        int lineNumber;
-    };
-    QVector<CodeLineNumerMapping> codeLineNumberMappings;
 };
 
 template <typename T> inline void prepareRelativeCall(const T &, Assembler *){}
@@ -1445,7 +1418,7 @@ class Q_QML_EXPORT InstructionSelection:
         public EvalInstructionSelection
 {
 public:
-    InstructionSelection(QV4::ExecutableAllocator *execAllocator, V4IR::Module *module, QV4::Compiler::JSUnitGenerator *jsGenerator);
+    InstructionSelection(QQmlEnginePrivate *qmlEngine, QV4::ExecutableAllocator *execAllocator, V4IR::Module *module, QV4::Compiler::JSUnitGenerator *jsGenerator);
     ~InstructionSelection();
 
     virtual void run(int functionIndex);
@@ -1483,10 +1456,11 @@ protected:
     virtual void callSubscript(V4IR::Expr *base, V4IR::Expr *index, V4IR::ExprList *args, V4IR::Temp *result);
     virtual void convertType(V4IR::Temp *source, V4IR::Temp *target);
     virtual void loadThisObject(V4IR::Temp *temp);
-    virtual void loadQmlIdObject(int id, V4IR::Temp *temp);
+    virtual void loadQmlIdArray(V4IR::Temp *temp);
     virtual void loadQmlImportedScripts(V4IR::Temp *temp);
     virtual void loadQmlContextObject(V4IR::Temp *temp);
     virtual void loadQmlScopeObject(V4IR::Temp *temp);
+    virtual void loadQmlSingleton(const QString &name, V4IR::Temp *temp);
     virtual void loadConst(V4IR::Const *sourceConst, V4IR::Temp *targetTemp);
     virtual void loadString(const QString &str, V4IR::Temp *targetTemp);
     virtual void loadRegexp(V4IR::RegExp *sourceRegexp, V4IR::Temp *targetTemp);
@@ -1496,7 +1470,7 @@ protected:
     virtual void getProperty(V4IR::Expr *base, const QString &name, V4IR::Temp *target);
     virtual void setProperty(V4IR::Expr *source, V4IR::Expr *targetBase, const QString &targetName);
     virtual void setQObjectProperty(V4IR::Expr *source, V4IR::Expr *targetBase, int propertyIndex);
-    virtual void getQObjectProperty(V4IR::Expr *base, int propertyIndex, bool captureRequired, V4IR::Temp *target);
+    virtual void getQObjectProperty(V4IR::Expr *base, int propertyIndex, bool captureRequired, int attachedPropertiesId, V4IR::Temp *target);
     virtual void getElement(V4IR::Expr *base, V4IR::Expr *index, V4IR::Temp *target);
     virtual void setElement(V4IR::Expr *source, V4IR::Expr *targetBase, V4IR::Expr *targetIndex);
     virtual void copyValue(V4IR::Temp *sourceTemp, V4IR::Temp *targetTemp);
@@ -1655,14 +1629,15 @@ private:
     Assembler* _as;
 
     CompilationUnit *compilationUnit;
+    QQmlEnginePrivate *qmlEngine;
 };
 
 class Q_QML_EXPORT ISelFactory: public EvalISelFactory
 {
 public:
     virtual ~ISelFactory() {}
-    virtual EvalInstructionSelection *create(QV4::ExecutableAllocator *execAllocator, V4IR::Module *module, QV4::Compiler::JSUnitGenerator *jsGenerator)
-    { return new InstructionSelection(execAllocator, module, jsGenerator); }
+    virtual EvalInstructionSelection *create(QQmlEnginePrivate *qmlEngine, QV4::ExecutableAllocator *execAllocator, V4IR::Module *module, QV4::Compiler::JSUnitGenerator *jsGenerator)
+    { return new InstructionSelection(qmlEngine, execAllocator, module, jsGenerator); }
     virtual bool jitCompileRegexps() const
     { return true; }
 };

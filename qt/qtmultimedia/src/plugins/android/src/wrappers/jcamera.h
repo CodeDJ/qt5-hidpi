@@ -49,9 +49,15 @@
 
 QT_BEGIN_NAMESPACE
 
-class JCamera : public QObject, public QJNIObjectPrivate
+class QThread;
+
+class JCameraWorker;
+
+class JCamera : public QObject
 {
     Q_OBJECT
+    Q_ENUMS(CameraFacing)
+    Q_ENUMS(ImageFormat)
 public:
     enum CameraFacing {
         CameraFacingBack = 0,
@@ -72,7 +78,7 @@ public:
 
     static JCamera *open(int cameraId);
 
-    int cameraId() const { return m_cameraId; }
+    int cameraId() const;
 
     void lock();
     void unlock();
@@ -82,13 +88,16 @@ public:
     CameraFacing getFacing();
     int getNativeOrientation();
 
+    int getDisplayOrientation() const;
+    void setDisplayOrientation(int degrees);
+
     QSize getPreferredPreviewSizeForVideo();
     QList<QSize> getSupportedPreviewSizes();
 
     ImageFormat getPreviewFormat();
     void setPreviewFormat(ImageFormat fmt);
 
-    QSize previewSize() const { return m_previewSize; }
+    QSize previewSize() const;
     void setPreviewSize(const QSize &size);
     void setPreviewTexture(jobject surfaceTexture);
 
@@ -136,6 +145,7 @@ public:
     void setWhiteBalance(const QString &value);
 
     void setRotation(int rotation);
+    int getRotation() const;
 
     QList<QSize> getSupportedPictureSizes();
     void setPictureSize(const QSize &size);
@@ -144,38 +154,33 @@ public:
     void startPreview();
     void stopPreview();
 
-    void requestPreviewFrame();
-
     void takePicture();
+
+    void fetchEachFrame(bool fetch);
+    void fetchLastPreviewFrame();
+    QJNIObjectPrivate getCameraObject();
 
     static bool initJNI(JNIEnv *env);
 
 Q_SIGNALS:
     void previewSizeChanged();
+    void previewStarted();
+    void previewStopped();
 
     void autoFocusStarted();
     void autoFocusComplete(bool success);
 
     void whiteBalanceChanged();
 
-    void previewFrameAvailable(const QByteArray &data);
-
     void pictureExposed();
     void pictureCaptured(const QByteArray &data);
+    void previewFetched(const QByteArray &preview);
+    void frameFetched(const QByteArray &frame);
 
 private:
-    JCamera(int cameraId, jobject cam);
-    void applyParameters();
+    JCamera(int cameraId, jobject cam, QThread *workerThread);
 
-    QStringList callStringListMethod(const char *methodName);
-
-    int m_cameraId;
-    QJNIObjectPrivate m_info;
-    QJNIObjectPrivate m_parameters;
-
-    QSize m_previewSize;
-
-    bool m_hasAPI14;
+    JCameraWorker *d;
 };
 
 QT_END_NAMESPACE

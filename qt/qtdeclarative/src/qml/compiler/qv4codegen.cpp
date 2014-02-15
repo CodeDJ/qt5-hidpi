@@ -1632,7 +1632,7 @@ bool Codegen::visit(ObjectLiteral *ast)
     if (!valueMap.isEmpty()) {
         V4IR::ExprList *current;
         for (QMap<QString, ObjectPropertyValue>::iterator it = valueMap.begin(); it != valueMap.end(); ) {
-            if (QV4::String(0, it.key()).asArrayIndex() != UINT_MAX) {
+            if (QV4::String::toArrayIndex(it.key()) != UINT_MAX) {
                 ++it;
                 continue;
             }
@@ -2049,6 +2049,8 @@ int Codegen::defineFunction(const QString &name, AST::Node *ast,
         _block->EXP(_block->CALL(_block->NAME(V4IR::Name::builtin_convert_this_to_object,
                 ast->firstSourceLocation().startLine, ast->firstSourceLocation().startColumn), 0));
     }
+
+    beginFunctionBodyHook();
 
     sourceElements(body);
 

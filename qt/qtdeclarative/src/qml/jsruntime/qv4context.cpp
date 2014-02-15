@@ -51,23 +51,38 @@
 
 using namespace QV4;
 
+const ManagedVTable ExecutionContext::static_vtbl =
+{
+    call,
+    construct,
+    markObjects,
+    destroy,
+    0 /*collectDeletables*/,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    isEqualTo,
+    0,
+    "ExecutionContext",
+};
+
 CallContext *ExecutionContext::newCallContext(FunctionObject *function, CallData *callData)
 {
-    CallContext *c = static_cast<CallContext *>(engine->memoryManager->allocContext(requiredMemoryForExecutionContect(function, callData->argc)));
-
-    engine->current = c;
-
-    c->initBaseContext(Type_CallContext, engine, this);
+    CallContext *c = static_cast<CallContext *>(engine->memoryManager->allocManaged(requiredMemoryForExecutionContect(function, callData->argc)));
+    new (c) CallContext(engine, Type_CallContext);
 
     c->function = function;
     c->realArgumentCount = callData->argc;
 
     c->strictMode = function->strictMode;
-    c->marked = false;
     c->outer = function->scope;
-#ifndef QT_NO_DEBUG
-    assert(c->outer->next != (ExecutionContext *)0x1);
-#endif
 
     c->activation = 0;
 
@@ -92,27 +107,20 @@ CallContext *ExecutionContext::newCallContext(FunctionObject *function, CallData
 
 WithContext *ExecutionContext::newWithContext(ObjectRef with)
 {
-    WithContext *w = static_cast<WithContext *>(engine->memoryManager->allocContext(sizeof(WithContext)));
-    engine->current = w;
-    w->initWithContext(this, with);
+    WithContext *w = new (engine->memoryManager) WithContext(engine, with);
     return w;
 }
 
 CatchContext *ExecutionContext::newCatchContext(const StringRef exceptionVarName, const ValueRef exceptionValue)
 {
-    CatchContext *c = static_cast<CatchContext *>(engine->memoryManager->allocContext(sizeof(CatchContext)));
-    engine->current = c;
-    c->initCatchContext(this, exceptionVarName, exceptionValue);
+    CatchContext *c = new (engine->memoryManager) CatchContext(engine, exceptionVarName, exceptionValue);
     return c;
 }
 
 CallContext *ExecutionContext::newQmlContext(FunctionObject *f, ObjectRef qml)
 {
-    CallContext *c = static_cast<CallContext *>(engine->memoryManager->allocContext(requiredMemoryForExecutionContect(f, 0)));
-
-    engine->current = c;
-    c->initQmlContext(this, qml, f);
-
+    CallContext *c = static_cast<CallContext *>(engine->memoryManager->allocManaged(requiredMemoryForExecutionContect(f, 0)));
+    new (c) CallContext(engine, qml, f);
     return c;
 }
 
@@ -149,7 +157,7 @@ String * const *ExecutionContext::formals() const
     if (type < Type_SimpleCallContext)
         return 0;
     QV4::FunctionObject *f = static_cast<const CallContext *>(this)->function;
-    return f ? f->formalParameterList : 0;
+    return (f && f->function) ? f->function->internalClass->nameMap.constData() : 0;
 }
 
 unsigned int ExecutionContext::formalCount() const
@@ -165,7 +173,7 @@ String * const *ExecutionContext::variables() const
     if (type < Type_SimpleCallContext)
         return 0;
     QV4::FunctionObject *f = static_cast<const CallContext *>(this)->function;
-    return f ? f->varList : 0;
+    return (f && f->function) ? f->function->internalClass->nameMap.constData() + f->function->nArguments : 0;
 }
 
 unsigned int ExecutionContext::variableCount() const
@@ -177,56 +185,47 @@ unsigned int ExecutionContext::variableCount() const
 }
 
 
-void GlobalContext::initGlobalContext(ExecutionEngine *eng)
+GlobalContext::GlobalContext(ExecutionEngine *eng)
+    : ExecutionContext(eng, Type_GlobalContext)
 {
-    initBaseContext(Type_GlobalContext, eng, /*parentContext*/0);
-    callData = reinterpret_cast<CallData *>(this + 1);
-    callData->tag = QV4::Value::_Integer_Type;
-    callData->argc = 0;
-    callData->thisObject = eng->globalObject;
-    global = 0;
+    global = eng->globalObject;
 }
 
-void WithContext::initWithContext(ExecutionContext *p, ObjectRef with)
+WithContext::WithContext(ExecutionEngine *engine, ObjectRef with)
+    : ExecutionContext(engine, Type_WithContext)
 {
-    initBaseContext(Type_WithContext, p->engine, p);
-    callData = p->callData;
-    outer = p;
-    lookups = p->lookups;
-    compilationUnit = p->compilationUnit;
+    callData = parent->callData;
+    outer = parent;
+    lookups = parent->lookups;
+    compilationUnit = parent->compilationUnit;
 
     withObject = with.getPointer();
 }
 
-void CatchContext::initCatchContext(ExecutionContext *p, const StringRef exceptionVarName, const ValueRef exceptionValue)
+CatchContext::CatchContext(ExecutionEngine *engine, const StringRef exceptionVarName, const ValueRef exceptionValue)
+    : ExecutionContext(engine, Type_CatchContext)
 {
-    initBaseContext(Type_CatchContext, p->engine, p);
-    strictMode = p->strictMode;
-    callData = p->callData;
-    outer = p;
-    lookups = p->lookups;
-    compilationUnit = p->compilationUnit;
+    strictMode = parent->strictMode;
+    callData = parent->callData;
+    outer = parent;
+    lookups = parent->lookups;
+    compilationUnit = parent->compilationUnit;
 
     this->exceptionVarName = exceptionVarName;
     this->exceptionValue = exceptionValue;
 }
 
-void CallContext::initQmlContext(ExecutionContext *parentContext, ObjectRef qml, FunctionObject *function)
+CallContext::CallContext(ExecutionEngine *engine, ObjectRef qml, FunctionObject *function)
+    : ExecutionContext(engine, Type_QmlContext)
 {
-    initBaseContext(Type_QmlContext, parentContext->engine, parentContext);
-
     this->function = function;
-    this->callData = reinterpret_cast<CallData *>(this + 1);
-    this->callData->tag = QV4::Value::_Integer_Type;
-    this->callData->argc = 0;
-    this->callData->thisObject = Primitive::undefinedValue();
+    callData = reinterpret_cast<CallData *>(this + 1);
+    callData->tag = QV4::Value::_Integer_Type;
+    callData->argc = 0;
+    callData->thisObject = Primitive::undefinedValue();
 
     strictMode = true;
-    marked = false;
-    this->outer = function->scope;
-#ifndef QT_NO_DEBUG
-    assert(outer->next != (ExecutionContext *)0x1);
-#endif
+    outer = function->scope;
 
     activation = qml.getPointer();
 
@@ -259,12 +258,10 @@ bool ExecutionContext::deleteProperty(const StringRef name)
             CallContext *c = static_cast<CallContext *>(ctx);
             FunctionObject *f = c->function;
             if (f->needsActivation || hasWith) {
-                for (unsigned int i = 0; i < f->varCount; ++i)
-                    if (f->varList[i]->isEqualTo(name))
-                        return false;
-                for (int i = (int)f->formalParameterCount - 1; i >= 0; --i)
-                    if (f->formalParameterList[i]->isEqualTo(name))
-                        return false;
+                uint index = f->function->internalClass->find(name);
+                if (index < UINT_MAX)
+                    // ### throw in strict mode?
+                    return false;
             }
             if (c->activation && c->activation->__hasProperty__(name))
                 return c->activation->deleteProperty(name);
@@ -285,36 +282,34 @@ bool CallContext::needsOwnArguments() const
     return function->needsActivation || callData->argc < static_cast<int>(function->formalParameterCount);
 }
 
-void ExecutionContext::mark()
+void ExecutionContext::markObjects(Managed *m, ExecutionEngine *engine)
 {
-    if (marked)
-        return;
-    marked = true;
+    ExecutionContext *ctx = static_cast<ExecutionContext *>(m);
 
-    if (outer)
-        outer->mark();
+    if (ctx->outer)
+        ctx->outer->mark(engine);
 
     // ### shouldn't need these 3 lines
-    callData->thisObject.mark(engine);
-    for (int arg = 0; arg < callData->argc; ++arg)
-        callData->args[arg].mark(engine);
+    ctx->callData->thisObject.mark(engine);
+    for (int arg = 0; arg < ctx->callData->argc; ++arg)
+        ctx->callData->args[arg].mark(engine);
 
-    if (type >= Type_CallContext) {
-        QV4::CallContext *c = static_cast<CallContext *>(this);
+    if (ctx->type >= Type_CallContext) {
+        QV4::CallContext *c = static_cast<CallContext *>(ctx);
         for (unsigned local = 0, lastLocal = c->variableCount(); local < lastLocal; ++local)
             c->locals[local].mark(engine);
         if (c->activation)
             c->activation->mark(engine);
         c->function->mark(engine);
-    } else if (type == Type_WithContext) {
-        WithContext *w = static_cast<WithContext *>(this);
+    } else if (ctx->type == Type_WithContext) {
+        WithContext *w = static_cast<WithContext *>(ctx);
         w->withObject->mark(engine);
-    } else if (type == Type_CatchContext) {
-        CatchContext *c = static_cast<CatchContext *>(this);
+    } else if (ctx->type == Type_CatchContext) {
+        CatchContext *c = static_cast<CatchContext *>(ctx);
         c->exceptionVarName->mark(engine);
         c->exceptionValue.mark(engine);
-    } else if (type == Type_GlobalContext) {
-        GlobalContext *g = static_cast<GlobalContext *>(this);
+    } else if (ctx->type == Type_GlobalContext) {
+        GlobalContext *g = static_cast<GlobalContext *>(ctx);
         g->global->mark(engine);
     }
 }
@@ -336,24 +331,35 @@ void ExecutionContext::setProperty(const StringRef name, const ValueRef value)
             ScopedObject activation(scope, (Object *)0);
             if (ctx->type >= Type_CallContext) {
                 CallContext *c = static_cast<CallContext *>(ctx);
-                for (unsigned int i = 0; i < c->function->varCount; ++i)
-                    if (c->function->varList[i]->isEqualTo(name)) {
-                        c->locals[i] = *value;
+                if (c->function->function) {
+                    uint index = c->function->function->internalClass->find(name);
+                    if (index < UINT_MAX) {
+                        if (index < c->function->formalParameterCount) {
+                            c->callData->args[c->function->formalParameterCount - index - 1] = *value;
+                        } else {
+                            index -= c->function->formalParameterCount;
+                            c->locals[index] = *value;
+                        }
                         return;
                     }
-                for (int i = (int)c->function->formalParameterCount - 1; i >= 0; --i)
-                    if (c->function->formalParameterList[i]->isEqualTo(name)) {
-                        c->callData->args[i] = *value;
-                        return;
-                    }
+                }
                 activation = c->activation;
             } else if (ctx->type == Type_GlobalContext) {
                 activation = static_cast<GlobalContext *>(ctx)->global;
             }
 
-            if (activation && (ctx->type == Type_QmlContext || activation->__hasProperty__(name))) {
-                activation->put(name, value);
-                return;
+            if (activation) {
+                if (ctx->type == Type_QmlContext) {
+                    activation->put(name, value);
+                    return;
+                } else {
+                    PropertyAttributes attrs;
+                    Property *p = activation->__getOwnProperty__(name, &attrs);
+                    if (p) {
+                        activation->putValue(p, attrs, value);
+                        return;
+                    }
+                }
             }
         }
     }
@@ -398,13 +404,13 @@ ReturnedValue ExecutionContext::getProperty(const StringRef name)
         else if (ctx->type >= Type_CallContext) {
             QV4::CallContext *c = static_cast<CallContext *>(ctx);
             ScopedFunctionObject f(scope, c->function);
-            if (f->needsActivation || hasWith || hasCatchScope) {
-                for (unsigned int i = 0; i < f->varCount; ++i)
-                    if (f->varList[i]->isEqualTo(name))
-                        return c->locals[i].asReturnedValue();
-                for (int i = (int)f->formalParameterCount - 1; i >= 0; --i)
-                    if (f->formalParameterList[i]->isEqualTo(name))
-                        return c->callData->args[i].asReturnedValue();
+            if (f->function && (f->needsActivation || hasWith || hasCatchScope)) {
+                uint index = f->function->internalClass->find(name);
+                if (index < UINT_MAX) {
+                    if (index < c->function->formalParameterCount)
+                        return c->callData->args[c->function->formalParameterCount - index - 1].asReturnedValue();
+                    return c->locals[index - c->function->formalParameterCount].asReturnedValue();
+                }
             }
             if (c->activation) {
                 bool hasProperty = false;
@@ -464,13 +470,13 @@ ReturnedValue ExecutionContext::getPropertyAndBase(const StringRef name, ObjectR
         else if (ctx->type >= Type_CallContext) {
             QV4::CallContext *c = static_cast<CallContext *>(ctx);
             FunctionObject *f = c->function;
-            if (f->needsActivation || hasWith || hasCatchScope) {
-                for (unsigned int i = 0; i < f->varCount; ++i)
-                    if (f->varList[i]->isEqualTo(name))
-                        return c->locals[i].asReturnedValue();
-                for (int i = (int)f->formalParameterCount - 1; i >= 0; --i)
-                    if (f->formalParameterList[i]->isEqualTo(name))
-                        return c->callData->args[i].asReturnedValue();
+            if (f->function && (f->needsActivation || hasWith || hasCatchScope)) {
+                uint index = f->function->internalClass->find(name);
+                if (index < UINT_MAX) {
+                    if (index < c->function->formalParameterCount)
+                        return c->callData->args[c->function->formalParameterCount - index - 1].asReturnedValue();
+                    return c->locals[index - c->function->formalParameterCount].asReturnedValue();
+                }
             }
             if (c->activation) {
                 bool hasProperty = false;

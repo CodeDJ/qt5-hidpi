@@ -343,6 +343,16 @@ Item {
             spinbox2.destroy()
         }
 
+        function test_setFontsize(){
+            var control = Qt.createQmlObject('import QtQuick.Controls 1.1; import QtQuick.Controls.Styles 1.1; SpinBox {style: SpinBoxStyle{}}', container, '')
+            var width = control.width;
+            var height = control.height;
+            control.font.pixelSize = 40
+            verify(control.width > width) // ensure that the text field resizes
+            verify(control.height > height)
+            control.destroy()
+        }
+
         function test_get_active_focus_when_up_or_down_was_pressed(){
             var test_control = 'import QtQuick 2.1;             \
             import QtQuick.Controls 1.1;                        \
@@ -608,7 +618,33 @@ Item {
             downCoord.y = item.y + item.height - arrowMargin
         }
 
+        function test_fixup() {
+            var spinbox = Qt.createQmlObject('import QtQuick.Controls 1.1; SpinBox { minimumValue: -1 }', container, '')
+            verify(spinbox)
+            spinbox.forceActiveFocus()
+            verify(spinbox.activeFocus)
 
+            keyClick(Qt.Key_Minus)
+            keyClick(Qt.Key_0)
+            compare(spinbox.__text, "-0")
+
+            // fixup "-0" to "0" on accept
+            keyClick(Qt.Key_Enter)
+            compare(spinbox.__text, "0")
+
+            spinbox.prefix = "pfx"
+            spinbox.suffix = "sfx"
+            keyClick(Qt.Key_A, Qt.ControlModifier)
+            keyClick(Qt.Key_Minus)
+            keyClick(Qt.Key_0)
+            compare(spinbox.__text, "pfx-0sfx")
+
+            // fixup "-0" to "0" on defocus
+            spinbox.focus = false
+            compare(spinbox.__text, "pfx0sfx")
+
+            spinbox.destroy()
+        }
     }
 }
 

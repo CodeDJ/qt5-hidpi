@@ -61,7 +61,7 @@ extern Q_GUI_EXPORT QImage qt_gl_read_framebuffer(const QSize &size, bool alpha_
 
 #ifdef QSG_RENDER_LOOP_DEBUG
 static QElapsedTimer qsg_debug_timer;
-#  define RLDEBUG(x) printf("(%6d) %s : %4d - %s\n", (int) qsg_debug_timer.elapsed(), __FILE__, __LINE__, x)
+#  define RLDEBUG(x) qDebug("(%6d) %s : %4d - %s", (int) qsg_debug_timer.elapsed(), __FILE__, __LINE__, x)
 #else
 #  define RLDEBUG(x)
 #endif
@@ -240,7 +240,11 @@ void QSGWindowsRenderLoop::hide(QQuickWindow *window)
     if (window->isExposed())
         handleObscurity();
 
+    if (!m_gl)
+        return;
+
     QQuickWindowPrivate *cd = QQuickWindowPrivate::get(window);
+    m_gl->makeCurrent(window);
     cd->cleanupNodesOnShutdown();
 
     // If this is the last tracked window, check for persistent SG and GL and

@@ -68,339 +68,6 @@
 #include <wmcodecdsp.h>
 
 //#define DEBUG_MEDIAFOUNDATION
-//#define TEST_STREAMING
-
-namespace
-{
-    //MFStream is added for supporting QIODevice type of media source.
-    //It is used to delegate invocations from media foundation(through IMFByteStream) to QIODevice.
-    class MFStream : public QObject, public IMFByteStream
-    {
-        Q_OBJECT
-    public:
-        MFStream(QIODevice *stream, bool ownStream)
-            : m_cRef(1)
-            , m_stream(stream)
-            , m_ownStream(ownStream)
-            , m_currentReadResult(0)
-        {
-            //Move to the thread of the stream object
-            //to make sure invocations on stream
-            //are happened in the same thread of stream object
-            this->moveToThread(stream->thread());
-            connect(stream, SIGNAL(readyRead()), this, SLOT(handleReadyRead()));
-        }
-
-        ~MFStream()
-        {
-            if (m_currentReadResult)
-                m_currentReadResult->Release();
-            if (m_ownStream)
-                m_stream->deleteLater();
-        }
-
-        //from IUnknown
-        STDMETHODIMP QueryInterface(REFIID riid, LPVOID *ppvObject)
-        {
-            if (!ppvObject)
-                return E_POINTER;
-            if (riid == IID_IMFByteStream) {
-                *ppvObject = static_cast<IMFByteStream*>(this);
-            } else if (riid == IID_IUnknown) {
-                *ppvObject = static_cast<IUnknown*>(this);
-            } else {
-                *ppvObject =  NULL;
-                return E_NOINTERFACE;
-            }
-            AddRef();
-            return S_OK;
-        }
-
-        STDMETHODIMP_(ULONG) AddRef(void)
-        {
-            return InterlockedIncrement(&m_cRef);
-        }
-
-        STDMETHODIMP_(ULONG) Release(void)
-        {
-            LONG cRef = InterlockedDecrement(&m_cRef);
-            if (cRef == 0) {
-                this->deleteLater();
-            }
-            return cRef;
-        }
-
-
-        //from IMFByteStream
-        STDMETHODIMP GetCapabilities(DWORD *pdwCapabilities)
-        {
-            if (!pdwCapabilities)
-                return E_INVALIDARG;
-            *pdwCapabilities = MFBYTESTREAM_IS_READABLE;
-            if (!m_stream->isSequential())
-                *pdwCapabilities |= MFBYTESTREAM_IS_SEEKABLE;
-            return S_OK;
-        }
-
-        STDMETHODIMP GetLength(QWORD *pqwLength)
-        {
-            if (!pqwLength)
-                return E_INVALIDARG;
-            QMutexLocker locker(&m_mutex);
-            *pqwLength = QWORD(m_stream->size());
-            return S_OK;
-        }
-
-        STDMETHODIMP SetLength(QWORD)
-        {
-            return E_NOTIMPL;
-        }
-
-        STDMETHODIMP GetCurrentPosition(QWORD *pqwPosition)
-        {
-            if (!pqwPosition)
-                return E_INVALIDARG;
-            QMutexLocker locker(&m_mutex);
-            *pqwPosition = m_stream->pos();
-            return S_OK;
-        }
-
-        STDMETHODIMP SetCurrentPosition(QWORD qwPosition)
-        {
-            QMutexLocker locker(&m_mutex);
-            //SetCurrentPosition may happend during the BeginRead/EndRead pair,
-            //refusing to execute SetCurrentPosition during that time seems to be
-            //the simplest workable solution
-            if (m_currentReadResult)
-                return S_FALSE;
-
-            bool seekOK = m_stream->seek(qint64(qwPosition));
-            if (seekOK)
-                return S_OK;
-            else
-                return S_FALSE;
-        }
-
-        STDMETHODIMP IsEndOfStream(BOOL *pfEndOfStream)
-        {
-            if (!pfEndOfStream)
-                return E_INVALIDARG;
-            QMutexLocker locker(&m_mutex);
-            *pfEndOfStream = m_stream->atEnd() ? TRUE : FALSE;
-            return S_OK;
-        }
-
-        STDMETHODIMP Read(BYTE *pb, ULONG cb, ULONG *pcbRead)
-        {
-            QMutexLocker locker(&m_mutex);
-            qint64 read = m_stream->read((char*)(pb), qint64(cb));
-            if (pcbRead)
-                *pcbRead = ULONG(read);
-            return S_OK;
-        }
-
-        STDMETHODIMP BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback,
-                               IUnknown *punkState)
-        {
-            if (!pCallback || !pb)
-                return E_INVALIDARG;
-
-            Q_ASSERT(m_currentReadResult == NULL);
-
-            AsyncReadState *state = new (std::nothrow) AsyncReadState(pb, cb);
-            if (state == NULL)
-                return E_OUTOFMEMORY;
-
-            HRESULT hr = MFCreateAsyncResult(state, pCallback, punkState, &m_currentReadResult);
-            state->Release();
-            if (FAILED(hr))
-                return hr;
-
-            QCoreApplication::postEvent(this, new QEvent(QEvent::User));
-            return hr;
-        }
-
-        STDMETHODIMP EndRead(IMFAsyncResult* pResult, ULONG *pcbRead)
-        {
-            if (!pcbRead)
-                return E_INVALIDARG;
-            IUnknown *pUnk;
-            pResult->GetObject(&pUnk);
-            AsyncReadState *state = static_cast<AsyncReadState*>(pUnk);
-            *pcbRead = state->bytesRead();
-            pUnk->Release();
-
-            m_currentReadResult->Release();
-            m_currentReadResult = NULL;
-
-            return S_OK;
-        }
-
-        STDMETHODIMP Write(const BYTE *, ULONG, ULONG *)
-        {
-            return E_NOTIMPL;
-        }
-
-        STDMETHODIMP BeginWrite(const BYTE *, ULONG ,
-                                IMFAsyncCallback *,
-                                IUnknown *)
-        {
-            return E_NOTIMPL;
-        }
-
-        STDMETHODIMP EndWrite(IMFAsyncResult *,
-                              ULONG *)
-        {
-            return E_NOTIMPL;
-        }
-
-        STDMETHODIMP Seek(
-            MFBYTESTREAM_SEEK_ORIGIN SeekOrigin,
-            LONGLONG llSeekOffset,
-            DWORD,
-            QWORD *pqwCurrentPosition)
-        {
-            QMutexLocker locker(&m_mutex);
-            if (m_currentReadResult)
-                return S_FALSE;
-
-            qint64 pos = qint64(llSeekOffset);
-            switch (SeekOrigin) {
-            case msoCurrent:
-                pos += m_stream->pos();
-                break;
-            }
-            bool seekOK = m_stream->seek(pos);
-            if (*pqwCurrentPosition)
-                *pqwCurrentPosition = pos;
-            if (seekOK)
-                return S_OK;
-            else
-                return S_FALSE;
-        }
-
-        STDMETHODIMP Flush()
-        {
-            return E_NOTIMPL;
-        }
-
-        STDMETHODIMP Close()
-        {
-            QMutexLocker locker(&m_mutex);
-            if (m_ownStream)
-                m_stream->close();
-            return S_OK;
-        }
-
-    private:
-        //AsyncReadState is a helper class used in BeginRead for asynchronous operation
-        //to record some BeginRead parameters, so these parameters could be
-        //used later when actually executing the read operation in another thread.
-        class AsyncReadState : public IUnknown
-        {
-        public:
-            AsyncReadState(BYTE *pb, ULONG cb)
-                : m_cRef(1)
-                , m_pb(pb)
-                , m_cb(cb)
-                , m_cbRead(0)
-            {
-            }
-
-            //from IUnknown
-            STDMETHODIMP QueryInterface(REFIID riid, LPVOID *ppvObject)
-            {
-                if (!ppvObject)
-                    return E_POINTER;
-
-                if (riid == IID_IUnknown) {
-                    *ppvObject = static_cast<IUnknown*>(this);
-                } else {
-                    *ppvObject =  NULL;
-                    return E_NOINTERFACE;
-                }
-                AddRef();
-                return S_OK;
-            }
-
-            STDMETHODIMP_(ULONG) AddRef(void)
-            {
-                return InterlockedIncrement(&m_cRef);
-            }
-
-            STDMETHODIMP_(ULONG) Release(void)
-            {
-                LONG cRef = InterlockedDecrement(&m_cRef);
-                if (cRef == 0)
-                    delete this;
-                // For thread safety, return a temporary variable.
-                return cRef;
-            }
-
-            BYTE* pb() const { return m_pb; }
-            ULONG cb() const { return m_cb; }
-            ULONG bytesRead() const { return m_cbRead; }
-
-            void setBytesRead(ULONG cbRead) { m_cbRead = cbRead; }
-
-        private:
-            long m_cRef;
-            BYTE *m_pb;
-            ULONG m_cb;
-            ULONG m_cbRead;
-        };
-
-        long m_cRef;
-        QIODevice *m_stream;
-        bool m_ownStream;
-        DWORD m_workQueueId;
-        QMutex m_mutex;
-
-        void doRead()
-        {
-            bool readDone = true;
-            IUnknown *pUnk = NULL;
-            HRESULT    hr = m_currentReadResult->GetObject(&pUnk);
-            if (SUCCEEDED(hr)) {
-                //do actual read
-                AsyncReadState *state =  static_cast<AsyncReadState*>(pUnk);
-                ULONG cbRead;
-                Read(state->pb(), state->cb() - state->bytesRead(), &cbRead);
-                pUnk->Release();
-
-                state->setBytesRead(cbRead + state->bytesRead());
-                if (state->cb() > state->bytesRead() && !m_stream->atEnd()) {
-                    readDone = false;
-                }
-            }
-
-            if (readDone) {
-                //now inform the original caller
-                m_currentReadResult->SetStatus(hr);
-                MFInvokeCallback(m_currentReadResult);
-            }
-        }
-
-
-    private Q_SLOTS:
-        void handleReadyRead()
-        {
-            doRead();
-        }
-
-    protected:
-        void customEvent(QEvent *event)
-        {
-            if (event->type() != QEvent::User) {
-                QObject::customEvent(event);
-                return;
-            }
-            doRead();
-        }
-        IMFAsyncResult *m_currentReadResult;
-    };
-}
-
 
 MFPlayerSession::MFPlayerSession(MFPlayerService *playerService)
     : m_playerService(playerService)
@@ -411,6 +78,8 @@ MFPlayerSession::MFPlayerSession(MFPlayerService *playerService)
     , m_rateSupport(0)
     , m_volumeControl(0)
     , m_netsourceStatistics(0)
+    , m_duration(0)
+    , m_sourceResolver(0)
     , m_hCloseEvent(0)
     , m_closing(false)
     , m_pendingRate(1)
@@ -536,7 +205,7 @@ void MFPlayerSession::load(const QMediaContent &media, QIODevice *stream)
     clear();
     QMediaResourceList resources = media.resources();
 
-    if (m_status == QMediaPlayer::LoadingMedia)
+    if (m_status == QMediaPlayer::LoadingMedia && m_sourceResolver)
         m_sourceResolver->cancel();
 
     if (resources.isEmpty() && !stream) {
@@ -581,7 +250,7 @@ void MFPlayerSession::handleSourceError(long hr)
 
 void MFPlayerSession::handleMediaSourceReady()
 {
-    if (QMediaPlayer::LoadingMedia != m_status)
+    if (QMediaPlayer::LoadingMedia != m_status || !m_sourceResolver)
         return;
 #ifdef DEBUG_MEDIAFOUNDATION
     qDebug() << "handleMediaSourceReady";
@@ -1323,12 +992,8 @@ void MFPlayerSession::stop(bool immediate)
 
 void MFPlayerSession::start()
 {
-    switch (m_status) {
-    case QMediaPlayer::EndOfMedia:
-        m_varStart.hVal.QuadPart = 0;
-        changeStatus(QMediaPlayer::BufferedMedia);
-        return;
-    }
+    if (m_status == QMediaPlayer::EndOfMedia)
+        m_varStart.hVal.QuadPart = 0; // restart from the beginning
 
 #ifdef DEBUG_MEDIAFOUNDATION
     qDebug() << "start";
@@ -1462,6 +1127,9 @@ void MFPlayerSession::setPositionInternal(qint64 position, Command requestCmd)
     if (m_state.command == CmdStop && requestCmd != CmdSeekResume) {
         m_varStart.vt = VT_I8;
         m_varStart.hVal.QuadPart = LONGLONG(position * 10000);
+        // Even though the position is not actually set on the session yet,
+        // report it to have changed anyway for UI controls to be updated
+        emit positionChanged(this->position());
         return;
     }
 
@@ -1561,6 +1229,8 @@ void MFPlayerSession::commitRateChange(qreal rate, BOOL isThin)
             m_presentationClock->GetCorrelatedTime(0, &hnsClockTime, &hnsSystemTime);
             Q_ASSERT(hnsSystemTime != 0);
 
+            m_request.setCommand(rate < 0 || m_state.rate < 0 ? CmdSeekResume : CmdStart);
+
             // We need to stop only when dealing with negative rates
             if (rate >= 0 && m_state.rate >= 0)
                 pause();
@@ -1569,7 +1239,6 @@ void MFPlayerSession::commitRateChange(qreal rate, BOOL isThin)
 
             // If we deal with negative rates, we stopped the session and consequently
             // reset the position to zero. We then need to resume to the current position.
-            m_request.setCommand(rate < 0 || m_state.rate < 0 ? CmdSeekResume : CmdStart);
             m_request.start = hnsClockTime / 10000;
         } else if (cmdNow == CmdPause) {
             if (rate < 0 || m_state.rate < 0) {
@@ -1604,10 +1273,11 @@ void MFPlayerSession::commitRateChange(qreal rate, BOOL isThin)
         // Changing rate from negative to zero requires to stop the session
         m_presentationClock->GetCorrelatedTime(0, &hnsClockTime, &hnsSystemTime);
 
+        m_request.setCommand(CmdSeekResume);
+
         stop();
 
-        // Resumte to the current position (stop() will reset the position to 0)
-        m_request.setCommand(CmdSeekResume);
+        // Resume to the current position (stop() will reset the position to 0)
         m_request.start = hnsClockTime / 10000;
     }
 
@@ -1785,7 +1455,7 @@ void MFPlayerSession::handleSessionEvent(IMFMediaEvent *sessionEvent)
 {
     HRESULT hrStatus = S_OK;
     HRESULT hr = sessionEvent->GetStatus(&hrStatus);
-    if (FAILED(hr)) {
+    if (FAILED(hr) || !m_session) {
         sessionEvent->Release();
         return;
     }
@@ -1835,6 +1505,12 @@ void MFPlayerSession::handleSessionEvent(IMFMediaEvent *sessionEvent)
             updatePendingCommands(CmdStart);
         break;
     case MESessionStarted:
+        if (m_status == QMediaPlayer::EndOfMedia
+                || m_status == QMediaPlayer::LoadedMedia) {
+            // If the session started, then enough data is buffered to play
+            changeStatus(QMediaPlayer::BufferedMedia);
+        }
+
         updatePendingCommands(CmdStart);
 #ifndef Q_WS_SIMULATOR
         // playback started, we can now set again the procAmpValues if they have been
@@ -1850,8 +1526,8 @@ void MFPlayerSession::handleSessionEvent(IMFMediaEvent *sessionEvent)
             m_varStart.hVal.QuadPart = 0;
 
             // Reset to Loaded status unless we are loading a new media
-            // or if the media is buffered (to avoid restarting the video surface)
-            if (m_status != QMediaPlayer::LoadingMedia && m_status != QMediaPlayer::BufferedMedia)
+            // or changing the playback rate to negative values (stop required)
+            if (m_status != QMediaPlayer::LoadingMedia && m_request.command != CmdSeekResume)
                 changeStatus(QMediaPlayer::LoadedMedia);
         }
         updatePendingCommands(CmdStop);
@@ -1920,12 +1596,10 @@ void MFPlayerSession::handleSessionEvent(IMFMediaEvent *sessionEvent)
 
     switch (meType) {
     case MEBufferingStarted:
-        changeStatus(m_status == QMediaPlayer::LoadedMedia ? QMediaPlayer::BufferingMedia : QMediaPlayer::StalledMedia);
+        changeStatus(QMediaPlayer::StalledMedia);
         emit bufferStatusChanged(bufferStatus());
         break;
     case MEBufferingStopped:
-        if (m_status == QMediaPlayer::BufferingMedia)
-            stop(true);
         changeStatus(QMediaPlayer::BufferedMedia);
         emit bufferStatusChanged(bufferStatus());
         break;
@@ -1990,16 +1664,6 @@ void MFPlayerSession::handleSessionEvent(IMFMediaEvent *sessionEvent)
                         }
                     }
                     MFGetService(m_session, MFNETSOURCE_STATISTICS_SERVICE, IID_PPV_ARGS(&m_netsourceStatistics));
-
-                    if (!m_netsourceStatistics || bufferStatus() == 100) {
-                        // If the source reader doesn't implement the statistics service, just set the status
-                        // to buffered, since there is no way to query the buffering progress...
-                        changeStatus(QMediaPlayer::BufferedMedia);
-                    } else {
-                        // Start to trigger buffering. Once enough buffering is done, the session will
-                        // be automatically stopped unless the user has explicitly started playback.
-                        start();
-                    }
                 }
             }
         }

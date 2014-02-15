@@ -53,7 +53,8 @@
 #include <cassert>
 
 namespace {
-QTextStream qout(stderr, QIODevice::WriteOnly);
+Q_GLOBAL_STATIC_WITH_ARGS(QTextStream, qout, (stderr, QIODevice::WriteOnly));
+#define qout *qout()
 } // anonymous namespace
 
 using namespace QQmlJS;
@@ -103,12 +104,16 @@ void IRDecoder::visitMove(V4IR::Move *s)
         if (V4IR::Name *n = s->source->asName()) {
             if (n->id && *n->id == QStringLiteral("this")) // TODO: `this' should be a builtin.
                 loadThisObject(t);
+            else if (n->builtin == V4IR::Name::builtin_qml_id_array)
+                loadQmlIdArray(t);
             else if (n->builtin == V4IR::Name::builtin_qml_context_object)
                 loadQmlContextObject(t);
             else if (n->builtin == V4IR::Name::builtin_qml_scope_object)
                 loadQmlScopeObject(t);
             else if (n->builtin == V4IR::Name::builtin_qml_imported_scripts_object)
                 loadQmlImportedScripts(t);
+            else if (n->qmlSingleton)
+                loadQmlSingleton(*n->id, t);
             else
                 getActivationProperty(n, t);
             return;
@@ -142,21 +147,22 @@ void IRDecoder::visitMove(V4IR::Move *s)
                 return;
             }
         } else if (V4IR::Member *m = s->source->asMember()) {
-            if (m->type == V4IR::Member::MemberOfQmlContext) {
-                V4IR::Name *base = m->base->asName();
-                Q_ASSERT(base);
-
-                if (base->builtin == V4IR::Name::builtin_qml_id_scope) {
-                    loadQmlIdObject(m->memberIndex, t);
-                    return;
-                }
-            } else if (m->type == V4IR::Member::MemberOfQObject) {
+            if (m->property) {
                 bool captureRequired = true;
-                if (_function) {
-                    captureRequired = !_function->contextObjectDependencies.contains(m->property)
-                                      && !_function->scopeObjectDependencies.contains(m->property);
+
+                Q_ASSERT(m->kind != V4IR::Member::MemberOfEnum);
+                const int attachedPropertiesId = m->attachedPropertiesIdOrEnumValue;
+
+                if (_function && attachedPropertiesId == 0 && !m->property->isConstant()) {
+                    if (m->kind == V4IR::Member::MemberOfQmlContextObject) {
+                        _function->contextObjectPropertyDependencies.insert(m->property->coreIndex, m->property->notifyIndex);
+                        captureRequired = false;
+                    } else if (m->kind == V4IR::Member::MemberOfQmlScopeObject) {
+                        _function->scopeObjectPropertyDependencies.insert(m->property->coreIndex, m->property->notifyIndex);
+                        captureRequired = false;
+                    }
                 }
-                getQObjectProperty(m->base, m->property->coreIndex, captureRequired, t);
+                getQObjectProperty(m->base, m->property->coreIndex, captureRequired, attachedPropertiesId, t);
                 return;
             } else if (m->base->asTemp() || m->base->asConst()) {
                 getProperty(m->base, *m->name, t);
@@ -195,7 +201,9 @@ void IRDecoder::visitMove(V4IR::Move *s)
     } else if (V4IR::Member *m = s->target->asMember()) {
         if (m->base->asTemp() || m->base->asConst()) {
             if (s->source->asTemp() || s->source->asConst()) {
-                if (m->type == V4IR::Member::MemberOfQObject) {
+                Q_ASSERT(m->kind != V4IR::Member::MemberOfEnum);
+                const int attachedPropertiesId = m->attachedPropertiesIdOrEnumValue;
+                if (m->property && attachedPropertiesId == 0) {
                     setQObjectProperty(s->source, m->base, m->property->coreIndex);
                     return;
                 } else {
@@ -234,9 +242,7 @@ void IRDecoder::visitExp(V4IR::Exp *s)
             Q_ASSERT(member->base->asTemp());
             callProperty(member->base->asTemp(), *member->name, c->args, 0);
         } else if (Subscript *s = c->base->asSubscript()) {
-            Q_ASSERT(s->base->asTemp());
-            Q_ASSERT(s->index->asTemp());
-            callSubscript(s->base->asTemp(), s->index->asTemp(), c->args, 0);
+            callSubscript(s->base, s->index, c->args, 0);
         } else {
             Q_UNIMPLEMENTED();
         }

@@ -44,7 +44,6 @@
 #include <QtQuick/qquickitem.h>
 #include <QtQuick/qquickwindow.h>
 #include <QtQuick/qquickview.h>
-#include <QtWidgets/QGraphicsSceneMouseEvent>
 #include "private/qquickfocusscope_p.h"
 #include "private/qquickitem_p.h"
 #include <qpa/qwindowsysteminterface.h>
@@ -1151,6 +1150,30 @@ void tst_qquickitem::enabledFocus()
     QCOMPARE(child2.hasFocus(), false);
     QCOMPARE(child2.hasActiveFocus(), false);
     QCOMPARE(window.activeFocusItem(), static_cast<QQuickItem *>(&child1));
+
+    child2.setFocus(true);
+    QCOMPARE(root.isEnabled(), true);
+    QCOMPARE(root.hasFocus(), true);
+    QCOMPARE(root.hasActiveFocus(), true);
+    QCOMPARE(child1.isEnabled(), true);
+    QCOMPARE(child1.hasFocus(), false);
+    QCOMPARE(child1.hasActiveFocus(), false);
+    QCOMPARE(child2.isEnabled(), false);
+    QCOMPARE(child2.hasFocus(), true);
+    QCOMPARE(child2.hasActiveFocus(), false);
+    QCOMPARE(window.activeFocusItem(), static_cast<QQuickItem *>(&root));
+
+    root.setEnabled(false);
+    QCOMPARE(root.isEnabled(), false);
+    QCOMPARE(root.hasFocus(), true);
+    QCOMPARE(root.hasActiveFocus(), false);
+    QCOMPARE(child1.isEnabled(), false);
+    QCOMPARE(child1.hasFocus(), false);
+    QCOMPARE(child1.hasActiveFocus(), false);
+    QCOMPARE(child2.isEnabled(), false);
+    QCOMPARE(child2.hasFocus(), true);
+    QCOMPARE(child2.hasActiveFocus(), false);
+    QCOMPARE(window.activeFocusItem(), window.contentItem());
 }
 
 static inline QByteArray msgItem(const QQuickItem *item)
@@ -1287,7 +1310,10 @@ void tst_qquickitem::touchEventAcceptIgnore()
         bool accepted = window.event(&event);
 
         QVERIFY(item->touchEventReached);
-        QCOMPARE(accepted && event.isAccepted(), itemSupportsTouch);
+
+        // always true because QtQuick always eats touch events so as to not
+        // allow QtGui to synthesise them for us.
+        QCOMPARE(accepted && event.isAccepted(), true);
     }
     {
         QTouchEvent::TouchPoint point;
@@ -1307,7 +1333,10 @@ void tst_qquickitem::touchEventAcceptIgnore()
         bool accepted = window.event(&event);
 
         QCOMPARE(item->touchEventReached, itemSupportsTouch);
-        QCOMPARE(accepted && event.isAccepted(), itemSupportsTouch);
+
+        // always true because QtQuick always eats touch events so as to not
+        // allow QtGui to synthesise them for us.
+        QCOMPARE(accepted && event.isAccepted(), true);
     }
     {
         QTouchEvent::TouchPoint point;
@@ -1327,7 +1356,10 @@ void tst_qquickitem::touchEventAcceptIgnore()
         bool accepted = window.event(&event);
 
         QCOMPARE(item->touchEventReached, itemSupportsTouch);
-        QCOMPARE(accepted && event.isAccepted(), itemSupportsTouch);
+
+        // always true because QtQuick always eats touch events so as to not
+        // allow QtGui to synthesise them for us.
+        QCOMPARE(accepted && event.isAccepted(), true);
     }
 }
 

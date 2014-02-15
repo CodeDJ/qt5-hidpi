@@ -48,6 +48,7 @@
 #include <QtGui/QGuiApplication>
 #include <QtGui/QScreen>
 #include <QtGui/QSurface>
+#include <QtGui/qpa/qplatformnativeinterface.h>
 
 #include <private/qsgtexture_p.h>
 
@@ -144,10 +145,21 @@ Atlas::Atlas(const QSize &size)
 {
 
 #ifdef QT_OPENGL_ES
+#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_NO_SDK)
+    QString *deviceName =
+            static_cast<QString *>(QGuiApplication::platformNativeInterface()->nativeResourceForIntegration("AndroidDeviceName"));
+    static bool wrongfullyReportsBgra8888Support = deviceName->compare(QStringLiteral("samsung SM-T211"), Qt::CaseInsensitive) == 0
+                                                || deviceName->compare(QStringLiteral("samsung SM-T210"), Qt::CaseInsensitive) == 0
+                                                || deviceName->compare(QStringLiteral("samsung SM-T215"), Qt::CaseInsensitive) == 0;
+#else
+    static bool wrongfullyReportsBgra8888Support = false;
+#endif
+
     const char *ext = (const char *) glGetString(GL_EXTENSIONS);
-    if (strstr(ext, "GL_EXT_bgra")
-            || strstr(ext, "GL_EXT_texture_format_BGRA8888")
-            || strstr(ext, "GL_IMG_texture_format_BGRA8888")) {
+    if (!wrongfullyReportsBgra8888Support
+            && (strstr(ext, "GL_EXT_bgra")
+                || strstr(ext, "GL_EXT_texture_format_BGRA8888")
+                || strstr(ext, "GL_IMG_texture_format_BGRA8888"))) {
         m_internalFormat = m_externalFormat = GL_BGRA;
 #ifdef Q_OS_IOS
     } else if (strstr(ext, "GL_APPLE_texture_format_BGRA8888")) {
@@ -375,7 +387,7 @@ bool Atlas::bind(QSGTexture::Filtering filtering)
 
 #ifndef QSG_NO_RENDER_TIMING
         if (qsg_render_timing) {
-            printf("   - AtlasTexture(%dx%d), uploaded in %d ms\n",
+            qDebug("   - AtlasTexture(%dx%d), uploaded in %d ms",
                    m_pending_uploads.at(i)->image().width(),
                    m_pending_uploads.at(i)->image().height(),
                    (int) (qsg_renderer_timer.elapsed()));
@@ -448,6 +460,7 @@ QSGTexture *Texture::removedFromAtlas() const
     if (!m_nonatlas_texture) {
         m_nonatlas_texture = new QSGPlainTexture();
         m_nonatlas_texture->setImage(m_image);
+        m_nonatlas_texture->setFiltering(filtering());
     }
     return m_nonatlas_texture;
 }

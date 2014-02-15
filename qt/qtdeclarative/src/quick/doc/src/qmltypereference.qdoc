@@ -42,11 +42,11 @@ by this module, organized according to category and purpose.
 The types provided by the \l {Qt Quick} module are only available in a QML document
 if that document imports the \c QtQuick namespace.
 
-The current version of the \c QtQuick module is version 2.0, and thus it may be
+The current version of the \c QtQuick module is version 2.2, and thus it may be
 imported via the following statement:
 
 \qml
-import QtQuick 2.0
+import QtQuick 2.2
 \endqml
 
 See the \l {Qt Quick} module documentation for more
@@ -85,7 +85,7 @@ In addition, the \c QtQuick module provides the following basic types:
 \section1 Object Types
 
 All of the object types provided by \c QtQuick are based on the \l{Item} type,
-which itself derives from \l{QtQml::QtObject}{QtObject}.  \l{qtqml-typereference-topic.html#object-types}
+which itself derives from \l{QtQml::QtObject}{QtObject}.  \l{Qt QML QML Types#Object Types}
 {QML object types} provided by the Qt QML module
 (such as \l{QtQml::QtObject}{QtObject} and \l{QtQml::Component}{Component}) are also available when
 you import \c QtQuick.
@@ -246,8 +246,8 @@ QML Lists and Models
 The \l{Qt QML Models QML Types}{Qt QML Models} submodule provides the types for
 structuring data with models and lists.
 \list
-\li \l ListModel - Defines a list of data
-\li \l ListElement - Defines a data item in a \l ListModel
+\li \l{ListModel} - Defines a list of data
+\li \l{ListElement} - Defines a data item in a \l{ListModel}
 \endlist
 
 These QML types are part of Qt Quick for backwards compatibility, but for
@@ -269,7 +269,7 @@ Views
 \list
 \li \l {ListView} - Provides a list visualization of a model
 \li \l {GridView} - Provides a grid visualization of a model
-\li \l {PathView} - Visualizes a model's contents along a path. See \l {Path Definition}{Path Elements} for more information.
+\li \l {PathView} - Visualizes a model's contents along a path. See \l Path for more information.
 \li \l {Package} - Collection that enables sharing of items within different views
 \endlist
 
@@ -308,6 +308,14 @@ set of Particle System types for Qt Quick 2
 \li \l {CanvasPixelArray} - Allows specification of a pixel array for use in a Canvas
 \li \l {CanvasImageData} - Allows specification of image data for use in a Canvas
 \li \l {TextMetrics} - Provides text and font measurement data for use in a Canvas
+\endlist
+
+\target qttest-types
+\section2 QtTest Types
+
+\list
+\li \l {QtTest::TestCase}{TestCase} - Represents a unit test case
+\li \l {QtTest::SignalSpy}{SignalSpy} - Enables introspection of signal emission
 \endlist
 
 */
@@ -1070,8 +1078,9 @@ console.log(c + " " + d); // false true
 
 /*!
 \qmlmodule QtTest 1.0
-\title Qt Quick Test
+\title Qt Quick Test QML Types
 \brief This module provides QML types to unit test your QML application
+\ingroup qmlmodules
 
 You can import this module using the following statement:
 \code

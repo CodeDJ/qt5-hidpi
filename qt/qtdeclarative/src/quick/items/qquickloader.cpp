@@ -106,6 +106,7 @@ void QQuickLoaderPrivate::clear()
         component->deleteLater();
         component = 0;
     }
+    componentStrongReference.clear();
     source = QUrl();
 
     if (item) {
@@ -270,7 +271,7 @@ qreal QQuickLoaderPrivate::getImplicitHeight() const
 
     In some cases you may wish to use a Loader within a view delegate to improve delegate
     loading performance. This works well in most cases, but there is one important issue to
-    be aware of related to the \l{QtQuick::Component#creation-context}{creation context} of a Component.
+    be aware of related to the \l{QtQml::Component#Creation Context}{creation context} of a Component.
 
     In the following example, the \c index context property inserted by the ListView into \c delegateComponent's
     context will be inaccessible to Text, as the Loader will use the creation context of \c myComponent as the parent
@@ -472,6 +473,10 @@ void QQuickLoader::setSourceComponent(QQmlComponent *comp)
     d->clear();
 
     d->component = comp;
+    if (comp) {
+        if (QQmlData *ddata = QQmlData::get(comp))
+            d->componentStrongReference = ddata->jsWrapper.value();
+    }
     d->loadingFromSource = false;
 
     if (d->active)

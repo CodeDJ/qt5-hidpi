@@ -503,6 +503,11 @@ QObject *QQmlVME::run(QList<QQmlError> *errors,
             const QQmlCompiledData::TypeReference &type = TYPES.at(instr.type);
             Q_ASSERT(type.component);
 
+            if (profiler.start()) {
+                profiler.updateTypeName(type.component->name);
+                profiler.background();
+            }
+
             states.push(State());
 
             State *cState = &states[states.count() - 2];
@@ -524,6 +529,9 @@ QObject *QQmlVME::run(QList<QQmlError> *errors,
         QML_END_INSTR(CreateQMLObject)
 
         QML_BEGIN_INSTR(CompleteQMLObject)
+            if (profiler.foreground())
+                profiler.updateLocation(CTXT->url, instr.line, instr.column);
+
             QObject *o = objects.top();
             Q_ASSERT(o);
 
@@ -566,6 +574,10 @@ QObject *QQmlVME::run(QList<QQmlError> *errors,
         QML_BEGIN_INSTR(CreateCppObject)
             const QQmlCompiledData::TypeReference &type = TYPES.at(instr.type);
             Q_ASSERT(type.type);
+            if (profiler.start()) {
+                profiler.updateLocation(CTXT->url, instr.line, instr.column);
+                profiler.updateTypeName(type.type->qmlTypeName());
+            }
 
             QObject *o = 0;
             void *memory = 0;
@@ -637,12 +649,16 @@ QObject *QQmlVME::run(QList<QQmlError> *errors,
         QML_END_INSTR(CreateCppObject)
 
         QML_BEGIN_INSTR(CreateSimpleObject)
+            const QQmlCompiledData::TypeReference &ref = TYPES.at(instr.type);
+            if (profiler.start()) {
+                profiler.updateLocation(CTXT->url, instr.line, instr.column);
+                profiler.updateTypeName(ref.type->qmlTypeName());
+            }
             QObject *o = (QObject *)operator new(instr.typeSize + sizeof(QQmlData));   
             ::memset(static_cast<void *>(o), 0, instr.typeSize + sizeof(QQmlData));
             instr.create(o);
 
             QQmlData *ddata = (QQmlData *)(((const char *)o) + instr.typeSize);
-            const QQmlCompiledData::TypeReference &ref = TYPES.at(instr.type);
             if (!ddata->propertyCache && ref.typePropertyCache) {
                 ddata->propertyCache = ref.typePropertyCache;
                 ddata->propertyCache->addref();
@@ -817,6 +833,7 @@ QObject *QQmlVME::run(QList<QQmlError> *errors,
         QML_END_INSTR(StoreScriptString)
 
         QML_BEGIN_INSTR(BeginObject)
+            profiler.push();
             QObject *target = objects.top();
             QQmlParserStatus *status = reinterpret_cast<QQmlParserStatus *>(reinterpret_cast<char *>(target) + instr.castValue);
             parserStatus.push(status);
@@ -1074,6 +1091,7 @@ normalExit:
     objects.deallocate();
     lists.deallocate();
     states.clear();
+    profiler.stop();
 
     return rv;
 }
@@ -1111,6 +1129,7 @@ void QQmlVME::reset()
     states.clear();
     rootContext = 0;
     creationContext = 0;
+    profiler.clear();
 }
 
 #ifdef QML_THREADED_VME_INTERPRETER
@@ -1170,6 +1189,7 @@ QQmlContextData *QQmlVME::complete(const Interrupt &interrupt)
     if (componentCompleteEnabled()) { // the qml designer does the component complete later
         QQmlTrace trace("VME Component Complete");
         while (!parserStatus.isEmpty()) {
+            profiler.pop();
             QQmlParserStatus *status = parserStatus.pop();
 #ifdef QML_ENABLE_TRACE
             QQmlData *data = parserStatusData.pop();
@@ -1189,6 +1209,7 @@ QQmlContextData *QQmlVME::complete(const Interrupt &interrupt)
                 return 0;
         }
         parserStatus.deallocate();
+        profiler.clear();
     }
 
     {

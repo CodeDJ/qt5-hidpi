@@ -47,6 +47,8 @@
 #include <qthread.h>
 #include <private/qqmlprofilerservice_p.h>
 #include <private/qqmlglobal_p.h>
+#include <QtGui/qguiapplication.h>
+#include <QtGui/qpa/qplatformnativeinterface.h>
 
 #if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
 #define CAN_BACKTRACE_EXECINFO
@@ -629,7 +631,7 @@ void QSGPlainTexture::bind()
             glDeleteTextures(1, &m_texture_id);
 #ifndef QSG_NO_RENDER_TIMING
             if (qsg_render_timing) {
-                printf("   - texture deleted in %dms (size: %dx%d)\n",
+                qDebug("   - texture deleted in %dms (size: %dx%d)",
                        (int) qsg_renderer_timer.elapsed(),
                        m_texture_size.width(),
                        m_texture_size.height());
@@ -682,14 +684,25 @@ void QSGPlainTexture::bind()
     GLenum externalFormat = GL_RGBA;
     GLenum internalFormat = GL_RGBA;
 
+#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_NO_SDK)
+    QString *deviceName =
+            static_cast<QString *>(QGuiApplication::platformNativeInterface()->nativeResourceForIntegration("AndroidDeviceName"));
+    static bool wrongfullyReportsBgra8888Support = deviceName->compare(QStringLiteral("samsung SM-T211"), Qt::CaseInsensitive) == 0
+                                                || deviceName->compare(QStringLiteral("samsung SM-T210"), Qt::CaseInsensitive) == 0
+                                                || deviceName->compare(QStringLiteral("samsung SM-T215"), Qt::CaseInsensitive) == 0;
+#else
+    static bool wrongfullyReportsBgra8888Support = false;
+#endif
+
     QOpenGLContext *context = QOpenGLContext::currentContext();
     if (context->hasExtension(QByteArrayLiteral("GL_EXT_bgra"))) {
         externalFormat = GL_BGRA;
 #ifdef QT_OPENGL_ES
         internalFormat = GL_BGRA;
 #endif
-    } else if (context->hasExtension(QByteArrayLiteral("GL_EXT_texture_format_BGRA8888"))
-            || context->hasExtension(QByteArrayLiteral("GL_IMG_texture_format_BGRA8888"))) {
+    } else if (!wrongfullyReportsBgra8888Support
+               && (context->hasExtension(QByteArrayLiteral("GL_EXT_texture_format_BGRA8888"))
+                   || context->hasExtension(QByteArrayLiteral("GL_IMG_texture_format_BGRA8888")))) {
         externalFormat = GL_BGRA;
         internalFormat = GL_BGRA;
 #ifdef Q_OS_IOS
@@ -725,7 +738,7 @@ void QSGPlainTexture::bind()
     if (qsg_render_timing) {
         mipmapTime = qsg_renderer_timer.nsecsElapsed();
 
-        printf("   - plaintexture(%dx%d) bind=%d, convert=%d, swizzle=%d (%s->%s), upload=%d, mipmap=%d, total=%d\n",
+        qDebug("   - plaintexture(%dx%d) bind=%d, convert=%d, swizzle=%d (%s->%s), upload=%d, mipmap=%d, total=%d",
                m_texture_size.width(), m_texture_size.height(),
                int(bindTime/1000000),
                int((convertTime - bindTime)/1000000),
