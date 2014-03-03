@@ -224,6 +224,15 @@ Item {
             }
 
             d.fillIndex = i
+
+            //Set all items to minimum size
+            for (i = 0; i < __items.length; ++i) {
+                if (i !== d.fillIndex) {
+                    var item = __items[i];
+                    item[d.size] = item.Layout[d.minimum];
+                }
+            }
+
             d.updateLayout()
         }
 
