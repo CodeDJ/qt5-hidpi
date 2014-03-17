@@ -133,7 +133,7 @@ MenuPrivate {
     property Component style: Qt.createComponent(Settings.style + "/MenuStyle.qml", root)
 
     /*! \internal */
-    property var __parentContentItem: __parentMenu.__contentItem
+    property var __parentContentItem: __parentMenu ? __parentMenu.__contentItem : null
     /*! \internal */
     property int __currentIndex: -1
     /*! \internal */
