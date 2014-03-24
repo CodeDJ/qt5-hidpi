@@ -349,6 +349,12 @@ QSGRenderContext::~QSGRenderContext()
     invalidate();
 }
 
+void QSGRenderContext::endSync()
+{
+    qDeleteAll(m_texturesToDelete);
+    m_texturesToDelete.clear();
+}
+
 static QBasicMutex qsg_framerender_mutex;
 
 void QSGRenderContext::renderNextFrame(QSGRenderer *renderer, GLuint fboId)
@@ -465,6 +471,9 @@ void QSGRenderContext::invalidate()
 {
     if (!m_gl)
         return;
+
+    qDeleteAll(m_texturesToDelete);
+    m_texturesToDelete.clear();
 
     qDeleteAll(m_textures.values());
     m_textures.clear();
