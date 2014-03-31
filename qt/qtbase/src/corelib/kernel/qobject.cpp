@@ -144,6 +144,17 @@ extern "C" Q_CORE_EXPORT void qt_addObject(QObject *)
 extern "C" Q_CORE_EXPORT void qt_removeObject(QObject *)
 {}
 
+extern "C" Q_CORE_EXPORT void qt_deleteLater(QObject *, int)
+{}
+
+extern "C" Q_CORE_EXPORT void (*qt_add_object_hook)(QObject *);
+extern "C" Q_CORE_EXPORT void (*qt_remove_object_hook)(QObject *);
+extern "C" Q_CORE_EXPORT void (*qt_delete_later_hook)(QObject *, int);
+
+void (*qt_add_object_hook)(QObject *) = qt_addObject;
+void (*qt_remove_object_hook)(QObject *) = qt_removeObject;
+void (*qt_delete_later_hook)(QObject *, int) = qt_deleteLater;
+
 struct QConnectionSenderSwitcher {
     QObject *receiver;
     QObjectPrivate::Sender *previousSender;
@@ -725,7 +736,7 @@ QObject::QObject(QObject *parent)
             QT_RETHROW;
         }
     }
-    qt_addObject(this);
+    qt_add_object_hook(this);
 }
 
 /*!
@@ -756,7 +767,7 @@ QObject::QObject(QObjectPrivate &dd, QObject *parent)
             QT_RETHROW;
         }
     }
-    qt_addObject(this);
+    qt_add_object_hook(this);
 }
 
 /*!
@@ -933,7 +944,7 @@ QObject::~QObject()
     if (!d->children.isEmpty())
         d->deleteChildren();
 
-    qt_removeObject(this);
+    qt_remove_object_hook(this);
 
     if (d->parent)        // remove it from parent object
         d->setParent_helper(0);
@@ -2013,7 +2024,9 @@ void QObject::removeEventFilter(QObject *obj)
 */
 void QObject::deleteLater()
 {
-    QCoreApplication::postEvent(this, new QDeferredDeleteEvent());
+    QDeferredDeleteEvent* event = new QDeferredDeleteEvent();
+    QCoreApplication::postEvent(this, event);
+    qt_delete_later_hook(this, event->loopLevel());
 }
 
 /*!
