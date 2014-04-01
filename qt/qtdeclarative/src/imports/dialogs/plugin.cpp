@@ -97,7 +97,7 @@ public:
         Q_UNUSED(uri)
 #endif
         QQuickAbstractDialog::m_decorationComponent =
-            new QQmlComponent(engine, m_decorationComponentUrl, QQmlComponent::Asynchronous);
+            new QQmlComponent(engine, m_decorationComponentUrl, QQmlComponent::Asynchronous, engine);
     }
 
     virtual void registerTypes(const char *uri) {
