@@ -1,6 +1,6 @@
 #!/bin/sh
 if [ "$#" -gt 0 ]; then
-  ./configure -debug-and-release -opensource -qt-sql-sqlite -platform macx-clang-32 -confirm-license -prefix /Developer/Qt-5.2.0 -developer-build -nomake tests -nomake examples "$@"
+  ./configure -debug-and-release -opensource -qt-sql-sqlite -platform macx-clang-32 -confirm-license -prefix /Developer/Qt-5.2.1 -developer-build -nomake tests -nomake examples "$@"
 else
-  ./configure -debug-and-release -opensource -qt-sql-sqlite -platform macx-clang-32 -confirm-license -prefix /Developer/Qt-5.2.0 -developer-build -nomake tests -nomake examples
+  ./configure -debug-and-release -opensource -qt-sql-sqlite -platform macx-clang-32 -confirm-license -prefix /Developer/Qt-5.2.1 -developer-build -nomake tests -nomake examples
 fi
