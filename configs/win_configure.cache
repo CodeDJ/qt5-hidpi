@@ -6,7 +6,7 @@ win32-msvc2010
 -confirm-license 
 -openssl 
 -prefix 
-C:\Qt-5.2.0 
+C:\Qt\Qt-5.2.1-local
 -developer-build 
 -nomake 
 examples 

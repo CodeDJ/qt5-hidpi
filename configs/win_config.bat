@@ -1,0 +1,1 @@
+configure.bat -opensource -debug-and-release -qt-sql-sqlite -platform win32-msvc2010 -confirm-license -openssl -prefix C:\Qt\Qt-5.2.1-local -developer-build -nomake examples -nomake tests -icu -force-debug-info 
