@@ -928,6 +928,10 @@ bool QWindowsContext::windowsProc(HWND hwnd, UINT message,
         return true;
 #ifndef Q_OS_WINCE
     case QtWindows::ActivateWindowEvent:
+    	if (platformWindow->window()->flags() & Qt::WindowDoesNotAcceptFocus) {
+        	*result = LRESULT(MA_NOACTIVATE);
+        	return true;
+    	}
 #ifndef QT_NO_TABLETEVENT
         if (!d->m_tabletSupport.isNull())
             d->m_tabletSupport->notifyActivate();
@@ -937,6 +941,12 @@ bool QWindowsContext::windowsProc(HWND hwnd, UINT message,
                 QWindowsWindow::baseWindowOf(modalWindow)->alertWindow();
         break;
 #endif
+	    case QtWindows::MouseActivateWindowEvent:
+	        if (platformWindow->window()->flags() & Qt::WindowDoesNotAcceptFocus) {
+	            *result = LRESULT(MA_NOACTIVATE);
+	            return true;
+	        }
+	        break;
 #ifndef QT_NO_CONTEXTMENU
     case QtWindows::ContextMenu:
         return handleContextMenuEvent(platformWindow->window(), msg);
