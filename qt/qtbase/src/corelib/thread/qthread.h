@@ -97,6 +97,10 @@ public:
     QAbstractEventDispatcher *eventDispatcher() const;
     void setEventDispatcher(QAbstractEventDispatcher *eventDispatcher);
 
+    void enterLoop();
+    void leaveLoop();
+    int loopLevel() const;
+
     bool event(QEvent *event);
 
 public Q_SLOTS:

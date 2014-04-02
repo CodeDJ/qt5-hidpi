@@ -860,4 +860,22 @@ bool QThread::isInterruptionRequested() const
     return d->interruptionRequested;
 }
 
+void QThread::enterLoop()
+{
+    Q_D(QThread);
+    ++d->data->loopLevel;    
+}
+
+void QThread::leaveLoop()
+{
+    Q_D(QThread);
+    --d->data->loopLevel;
+}
+
+int QThread::loopLevel() const
+{
+    Q_D(const QThread);
+    return d->data->loopLevel;
+}
+
 QT_END_NAMESPACE
