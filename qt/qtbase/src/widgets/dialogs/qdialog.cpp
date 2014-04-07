@@ -125,7 +125,8 @@ QWindow *QDialogPrivate::parentWindow() const
 {
     if (const QWidget *parent = q_func()->nativeParentWidget())
         return parent->windowHandle();
-    return 0;
+    
+    return q_func()->windowHandle()->transientParent();
 }
 
 bool QDialogPrivate::setNativeDialogVisible(bool visible)
