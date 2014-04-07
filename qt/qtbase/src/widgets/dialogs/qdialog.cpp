@@ -126,6 +126,7 @@ QWindow *QDialogPrivate::parentWindow() const
     if (const QWidget *parent = q_func()->nativeParentWidget())
         return parent->windowHandle();
     
+    q_func()->winId();
     return q_func()->windowHandle()->transientParent();
 }
 
