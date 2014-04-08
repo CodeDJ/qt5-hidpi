@@ -1741,10 +1741,10 @@ void QQuickTextEdit::triggerPreprocess()
 }
 
 typedef QQuickTextEditPrivate::Node TextNode;
-typedef QList<TextNode*>::iterator TextNodeIterator;
+typedef QList<QSharedPointer<TextNode> >::iterator TextNodeIterator;
 
 
-static bool comesBefore(TextNode* n1, TextNode* n2)
+static bool comesBefore(const QSharedPointer<TextNode> &n1, const QSharedPointer<TextNode> &n2)
 {
     return n1->startPos() < n2->startPos();
 }
@@ -1789,7 +1789,8 @@ QSGNode *QQuickTextEdit::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *
             do {
                 rootNode->removeChildNode((*nodeIterator)->textNode());
                 delete (*nodeIterator)->textNode();
-                delete *nodeIterator;
+                // delete *nodeIterator;
+                (*nodeIterator).clear();
                 nodeIterator = d->textNodeMap.erase(nodeIterator);
             } while (nodeIterator != d->textNodeMap.end() && (*nodeIterator)->dirty());
         }
@@ -1803,7 +1804,9 @@ QSGNode *QQuickTextEdit::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *
         int nodeStart = firstDirtyPos;
         QPointF basePosition(d->xoff, d->yoff);
         QPointF nodeOffset;
-        TextNode *firstCleanNode = (nodeIterator != d->textNodeMap.end()) ? *nodeIterator : 0;
+        QSharedPointer<TextNode> firstCleanNode;
+        if (nodeIterator != d->textNodeMap.end()) 
+            firstCleanNode = *nodeIterator;
 
         QList<QTextFrame *> frames;
         frames.append(d->document->rootFrame());
@@ -2043,14 +2046,14 @@ void QQuickTextEdit::markDirtyNodesForRange(int start, int end, int charDelta)
     if (start == end)
         return;
 
-    TextNode dummyNode(start, 0);
-    TextNodeIterator it = std::lower_bound(d->textNodeMap.begin(), d->textNodeMap.end(), &dummyNode, &comesBefore);
+    QSharedPointer<TextNode> dummyNode(new TextNode(start, 0));
+    TextNodeIterator it = std::lower_bound(d->textNodeMap.begin(), d->textNodeMap.end(), dummyNode, &comesBefore);
     // qLowerBound gives us the first node past the start of the affected portion, rewind to the first node
     // that starts at the last position before the edit position. (there might be several because of images)
     if (it != d->textNodeMap.begin()) {
         --it;
-        TextNode otherDummy((*it)->startPos(), 0);
-        it = std::lower_bound(d->textNodeMap.begin(), d->textNodeMap.end(), &otherDummy, &comesBefore);
+        QSharedPointer<TextNode> otherDummy(new TextNode((*it)->startPos(), 0));
+        it = std::lower_bound(d->textNodeMap.begin(), d->textNodeMap.end(), otherDummy, &comesBefore);
     }
 
     // mark the affected nodes as dirty
@@ -2249,7 +2252,7 @@ void QQuickTextEdit::updateWholeDocument()
 {
     Q_D(QQuickTextEdit);
     if (!d->textNodeMap.isEmpty()) {
-        Q_FOREACH (TextNode* node, d->textNodeMap)
+        Q_FOREACH (const QSharedPointer<TextNode> &node, d->textNodeMap)
             node->setDirty();
     }
 
@@ -2376,7 +2379,7 @@ void QQuickTextEditPrivate::handleFocusEvent(QFocusEvent *event)
 void QQuickTextEditPrivate::addCurrentTextNodeToRoot(QSGTransformNode *root, QQuickTextNode *node, TextNodeIterator &it, int startPos)
 {
     node->m_engine->addToSceneGraph(node, QQuickText::Normal, QColor());
-    it = textNodeMap.insert(it, new TextNode(startPos, node));
+    it = textNodeMap.insert(it, QSharedPointer<TextNode>(new TextNode(startPos, node)));
     ++it;
     root->appendChildNode(node);
 }

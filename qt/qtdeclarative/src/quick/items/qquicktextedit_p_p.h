@@ -87,7 +87,7 @@ public:
         QQuickTextNode* m_node;
         bool m_dirty;
     };
-    typedef QList<Node*>::iterator TextNodeIterator;
+    typedef QList<QSharedPointer<Node> >::iterator TextNodeIterator;
 
 
     QQuickTextEditPrivate()
@@ -154,7 +154,7 @@ public:
     QQuickTextDocumentWithImageResources *document;
     QQuickTextControl *control;
     QQuickTextDocument *quickDocument;
-    QList<Node*> textNodeMap;
+    QList<QSharedPointer<Node> > textNodeMap;
 
     int lastSelectionStart;
     int lastSelectionEnd;
