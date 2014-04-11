@@ -44,7 +44,6 @@
 
 #include <QtQuick/qsgmaterial.h>
 #include <QtQuick/qsgtexture.h>
-#include <QPointer>
 
 QT_BEGIN_NAMESPACE
 
@@ -73,7 +72,7 @@ public:
     QSGTexture::WrapMode verticalWrapMode() const { return QSGTexture::WrapMode(m_vertical_wrap); }
 
 protected:
-    QPointer<QSGTexture> m_texture;
+    QSGTexture *m_texture;
 
     uint m_filtering: 2;
     uint m_mipmap_filtering: 2;

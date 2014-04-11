@@ -295,8 +295,6 @@ int QSGOpaqueTextureMaterial::compare(const QSGMaterial *o) const
 {
     Q_ASSERT(o && type() == o->type());
     const QSGOpaqueTextureMaterial *other = static_cast<const QSGOpaqueTextureMaterial *>(o);
-    if (!m_texture || !other->texture())
-        return int(m_filtering);
     if (int diff = m_texture->textureId() - other->texture()->textureId())
         return diff;
     return int(m_filtering) - int(other->m_filtering);
