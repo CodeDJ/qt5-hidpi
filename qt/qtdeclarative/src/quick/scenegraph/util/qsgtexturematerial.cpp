@@ -293,6 +293,8 @@ void QSGOpaqueTextureMaterial::setTexture(QSGTexture *texture)
 
 int QSGOpaqueTextureMaterial::compare(const QSGMaterial *o) const
 {
+    if (!m_texture)
+        return -1;
     Q_ASSERT(o && type() == o->type());
     const QSGOpaqueTextureMaterial *other = static_cast<const QSGOpaqueTextureMaterial *>(o);
     if (int diff = m_texture->textureId() - other->texture()->textureId())

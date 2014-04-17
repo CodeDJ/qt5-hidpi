@@ -44,6 +44,7 @@
 
 #include <QtQuick/qsgmaterial.h>
 #include <QtQuick/qsgtexture.h>
+#include <QPointer>
 
 QT_BEGIN_NAMESPACE
 
@@ -57,7 +58,7 @@ public:
     virtual int compare(const QSGMaterial *other) const;
 
     void setTexture(QSGTexture *texture);
-    QSGTexture *texture() const { return m_texture; }
+    QSGTexture *texture() const { return m_texture.data(); }
 
     void setMipmapFiltering(QSGTexture::Filtering filteringType) { m_mipmap_filtering = filteringType; }
     QSGTexture::Filtering mipmapFiltering() const { return QSGTexture::Filtering(m_mipmap_filtering); }
@@ -72,7 +73,7 @@ public:
     QSGTexture::WrapMode verticalWrapMode() const { return QSGTexture::WrapMode(m_vertical_wrap); }
 
 protected:
-    QSGTexture *m_texture;
+    QPointer<QSGTexture> m_texture;
 
     uint m_filtering: 2;
     uint m_mipmap_filtering: 2;

@@ -108,15 +108,21 @@ public:
 
     ~QQuickStyleNode()
     {
-        delete m_material.texture();
+        {
+            QMutexLocker locker(&m_mutex);
+            delete m_material.texture();
+        }
     }
 
     void initialize(QSGTexture *texture,
                     const QRectF &bounds, qreal devicePixelRatio,
                     int left, int top, int right, int bottom) {
 
-        delete m_material.texture();
-        m_material.setTexture(texture);
+        {
+            QMutexLocker locker(&m_mutex);
+            delete m_material.texture();
+            m_material.setTexture(texture);
+        }
 
         if (left <= 0 && top <= 0 && right <= 0 && bottom <= 0) {
             m_geometry.allocate(4, 0);
@@ -181,6 +187,7 @@ public:
 
     QSGGeometry m_geometry;
     QSGTextureMaterial m_material;
+    QMutex m_mutex;
 };
 
 QQuickStyleItem::QQuickStyleItem(QQuickItem *parent)
