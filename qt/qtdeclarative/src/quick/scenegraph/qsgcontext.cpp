@@ -503,11 +503,13 @@ void QSGRenderContext::invalidate()
     // code is only called from QQuickWindow's shutdown which is called
     // only when the GUI is blocked, and multiple threads will call it in
     // sequence. (see qsgdefaultglyphnode_p.cpp's init())
+    m_mutex.lock();
     for (QSet<QFontEngine *>::const_iterator it = m_fontEnginesToClean.constBegin(),
          end = m_fontEnginesToClean.constEnd(); it != end; ++it) {
         (*it)->clearGlyphCache(m_gl);
     }
     m_fontEnginesToClean.clear();
+    m_mutex.unlock();
 
     delete m_depthStencilManager;
     m_depthStencilManager = 0;
