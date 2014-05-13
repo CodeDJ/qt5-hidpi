@@ -379,6 +379,9 @@ void QQuickMenu::__popup(qreal x, qreal y, int atItemIndex)
     QQuickMenuBase *atItem = menuItemAtIndex(atItemIndex);
 
     QQuickWindow *parentWindow = findParentWindow();
+    
+    if (visualItem())
+        connect(visualItem(), SIGNAL(destroyed()), this, SLOT(__closeMenu()), Qt::UniqueConnection);
 
     if (m_platformMenu) {
         QPointF screenPosition(x + m_xOffset, y + m_yOffset);
