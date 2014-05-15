@@ -129,6 +129,7 @@ QScanThread::QScanThread(QObject *parent)
 
 QScanThread::~QScanThread()
 {
+    quit();
 }
 
 void QScanThread::quit()
@@ -404,6 +405,8 @@ QCoreWlanEngine::QCoreWlanEngine(QObject *parent)
 
 QCoreWlanEngine::~QCoreWlanEngine()
 {
+    scanThread->wait(5000);
+    
     while (!foundConfigurations.isEmpty())
         delete foundConfigurations.takeFirst();
     [listener remove];
