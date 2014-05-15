@@ -489,6 +489,11 @@ void QCocoaMenu::showPopup(const QWindow *parentWindow, QPoint pos, const QPlatf
         [(QNSView *)view resetMouseButtons];
 }
 
+void QCocoaMenu::hidePopup()
+{
+    [m_nativeMenu cancelTracking];
+}
+
 QPlatformMenuItem *QCocoaMenu::menuItemAt(int position) const
 {
     if (0 <= position && position < m_menuItems.count())

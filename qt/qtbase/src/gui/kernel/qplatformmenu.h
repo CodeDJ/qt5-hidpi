@@ -113,6 +113,10 @@ public:
         Q_UNUSED(item);
         setVisible(true);
     }
+    virtual void hidePopup()
+    {
+        setVisible(false);
+    }
 
     virtual QPlatformMenuItem *menuItemAt(int position) const = 0;
     virtual QPlatformMenuItem *menuItemForTag(quintptr tag) const = 0;

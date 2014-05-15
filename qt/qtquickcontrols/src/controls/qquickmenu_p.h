@@ -77,6 +77,7 @@ class QQuickMenu : public QQuickMenuText
 
 public:
     Q_INVOKABLE void popup();
+    Q_INVOKABLE void closePopup();
     Q_INVOKABLE QQuickMenuItem *addItem(QString);
     Q_INVOKABLE QQuickMenuItem *insertItem(int, QString);
     Q_INVOKABLE void addSeparator();
@@ -162,6 +163,7 @@ private:
     static QObject *at_menuItems(QQuickMenuItems *list, int index);
     static void clear_menuItems(QQuickMenuItems *list);
     void setupMenuItem(QQuickMenuBase *item, int platformIndex = -1);
+    void hidePopup();
 
     QPlatformMenu *m_platformMenu;
     QList<QQuickMenuBase *> m_menuItems;

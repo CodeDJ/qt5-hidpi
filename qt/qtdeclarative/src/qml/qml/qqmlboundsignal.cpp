@@ -126,7 +126,7 @@ void QQmlBoundSignalExpression::expressionChanged(QQmlJavaScriptExpression *)
 
 QString QQmlBoundSignalExpression::expression() const
 {
-    if (m_expressionFunctionValid) {
+    if (m_expressionFunctionValid && context() && engine()) {
         Q_ASSERT (context() && engine());
         QV4::Scope scope(QQmlEnginePrivate::get(engine())->v4engine());
         QV4::ScopedValue v(scope, m_v8function.value());
