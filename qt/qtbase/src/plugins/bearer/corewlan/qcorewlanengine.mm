@@ -152,7 +152,6 @@ QScanThread::QScanThread(QObject *parent)
 
 QScanThread::~QScanThread()
 {
-    quit();
 }
 
 void QScanThread::quit()
