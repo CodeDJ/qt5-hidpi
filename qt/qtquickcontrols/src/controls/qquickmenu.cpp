@@ -366,11 +366,6 @@ void QQuickMenu::popup()
     __popup(mousePos.x(), mousePos.y());
 }
 
-void QQuickMenu::closePopup()
-{
-    __closeMenu();
-}
-
 void QQuickMenu::__popup(qreal x, qreal y, int atItemIndex)
 {
     if (popupVisible()) {
@@ -438,7 +433,6 @@ void QQuickMenu::__closeMenu()
     setPopupVisible(false);
     if (m_popupWindow)
         m_popupWindow->setVisible(false);
-    hidePopup();
     m_parentWindow = 0;
     emit __menuClosed();
 }

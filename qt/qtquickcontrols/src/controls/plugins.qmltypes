@@ -93,6 +93,7 @@ Module {
         Method { name: "__closeMenu" }
         Method { name: "__dismissMenu" }
         Method { name: "popup" }
+        Method { name: "hidePopup" }
         Method {
             name: "addItem"
             type: "QQuickMenuItem*"

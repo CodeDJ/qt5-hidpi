@@ -78,6 +78,8 @@ QQuickMenuBar::QQuickMenuBar(QObject *parent)
 
 QQuickMenuBar::~QQuickMenuBar()
 {
+    m_platformMenuBar->deleteLater();
+    m_platformMenuBar = 0;
 }
 
 QQmlListProperty<QQuickMenu> QQuickMenuBar::menus()

@@ -761,7 +761,7 @@ QMenuBar::QMenuBar(QWidget *parent) : QWidget(*new QMenuBarPrivate, parent, 0)
 QMenuBar::~QMenuBar()
 {
     Q_D(QMenuBar);
-    delete d->platformMenuBar;
+    d->platformMenuBar->deleteLater();
     d->platformMenuBar = 0;
 
 #ifdef Q_OS_WINCE
